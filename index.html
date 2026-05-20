@@ -18,7 +18,6 @@
     --text: #1a1a18;
     --text2: #6b6b66;
     --text3: #a0a09a;
-    --accent: #1a1a18;
     --red: #c0392b;
     --red-bg: #fdf0ef;
     --radius: 12px;
@@ -34,7 +33,6 @@
       --text: #f0efe9;
       --text2: #9a9a94;
       --text3: #5a5a56;
-      --accent: #f0efe9;
       --red-bg: #2a1a18;
     }
   }
@@ -42,14 +40,49 @@
   html, body { height: 100%; background: var(--bg); font-family: -apple-system, 'Helvetica Neue', sans-serif; color: var(--text); }
   body { display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; }
 
+  /* Setup screen */
+  #setup-screen {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 2rem; z-index: 100;
+  }
+  #setup-screen i { font-size: 48px; color: var(--text2); margin-bottom: 1.5rem; }
+  #setup-screen h1 { font-size: 24px; font-weight: 600; margin-bottom: 6px; letter-spacing: -0.5px; }
+  #setup-screen p { font-size: 14px; color: var(--text2); text-align: center; line-height: 1.6; margin-bottom: 1.5rem; }
+  #api-key-input {
+    width: 100%; font-size: 14px; padding: 12px 14px;
+    border-radius: var(--radius-sm);
+    border: 0.5px solid var(--border2);
+    background: var(--surface);
+    color: var(--text); font-family: monospace;
+    margin-bottom: 10px; outline: none;
+  }
+  #api-key-input:focus { border-color: var(--text); }
+  #save-key-btn {
+    width: 100%; padding: 13px;
+    border-radius: var(--radius-sm);
+    border: none; background: var(--text); color: var(--bg);
+    font-size: 15px; font-weight: 500; cursor: pointer;
+    font-family: inherit;
+  }
+  #setup-hint { font-size: 12px; color: var(--text3); text-align: center; margin-top: 10px; line-height: 1.5; }
+  #setup-error { font-size: 13px; color: var(--red); text-align: center; margin-top: 8px; display: none; }
+
   header {
     padding: 16px 20px 12px;
     background: var(--bg);
     border-bottom: 0.5px solid var(--border);
     position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
   }
-  .app-name { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; color: var(--text); }
+  .app-name { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; }
   .app-sub { font-size: 12px; color: var(--text3); letter-spacing: 0.04em; margin-top: 1px; }
+  #settings-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text3); padding: 4px;
+  }
+  #settings-btn i { font-size: 20px; }
 
   .tabs {
     display: flex; gap: 6px; padding: 10px 20px;
@@ -62,7 +95,6 @@
     border-radius: 20px;
     border: 0.5px solid var(--border2);
     background: transparent; color: var(--text2); cursor: pointer;
-    transition: all 0.15s;
     font-family: inherit;
   }
   .tab.active { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 500; }
@@ -85,49 +117,37 @@
     margin: 0 auto 14px; cursor: pointer;
     transition: all 0.2s;
   }
-  #mic-btn.listening {
-    border-color: var(--red);
-    background: var(--red-bg);
-    animation: pulse 1.2s ease-in-out infinite;
-  }
+  #mic-btn.listening { border-color: var(--red); background: var(--red-bg); animation: pulse 1.2s ease-in-out infinite; }
   #mic-btn i { font-size: 30px; color: var(--text2); transition: color 0.2s; }
   #mic-btn.listening i { color: var(--red); }
   @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.07)} }
 
   #status-text { font-size: 13px; color: var(--text2); margin-bottom: 8px; }
-  #transcript-box { font-size: 14px; color: var(--text); min-height: 20px; font-style: italic; color: var(--text2); }
+  #transcript-box { font-size: 14px; min-height: 20px; font-style: italic; color: var(--text2); }
 
   .input-row { display: flex; gap: 8px; margin-bottom: 10px; }
   #text-input {
     flex: 1; font-size: 15px; padding: 10px 14px;
     border-radius: var(--radius-sm);
     border: 0.5px solid var(--border2);
-    background: var(--surface);
-    color: var(--text);
-    font-family: inherit;
-    outline: none;
+    background: var(--surface); color: var(--text);
+    font-family: inherit; outline: none;
   }
   #text-input:focus { border-color: var(--text); }
   #send-btn {
     width: 44px; height: 44px; border-radius: var(--radius-sm);
-    border: 0.5px solid var(--border2);
-    background: var(--text); color: var(--bg);
+    border: none; background: var(--text); color: var(--bg);
     cursor: pointer; display: flex; align-items: center; justify-content: center;
-    transition: opacity 0.15s;
   }
   #send-btn i { font-size: 18px; }
 
-  .hint {
-    font-size: 12px; color: var(--text3); line-height: 1.6;
-    padding: 0 2px; margin-bottom: 4px;
-  }
+  .hint { font-size: 12px; color: var(--text3); line-height: 1.6; padding: 0 2px; margin-bottom: 4px; }
 
   .response-card {
     background: var(--surface);
     border-radius: var(--radius);
     border: 0.5px solid var(--border);
-    padding: 14px 16px;
-    margin-top: 12px;
+    padding: 14px 16px; margin-top: 12px;
   }
   .response-label { font-size: 10px; color: var(--text3); letter-spacing: 0.08em; margin-bottom: 6px; text-transform: uppercase; }
   #ai-response { font-size: 14px; color: var(--text); line-height: 1.65; white-space: pre-wrap; }
@@ -136,8 +156,7 @@
     background: var(--surface);
     border-radius: var(--radius);
     border: 0.5px solid var(--border);
-    padding: 14px 16px;
-    margin-bottom: 10px;
+    padding: 14px 16px; margin-bottom: 10px;
   }
   .lager-card-title {
     font-size: 15px; font-weight: 600; color: var(--text);
@@ -145,17 +164,13 @@
     margin-bottom: 10px;
   }
   .badge {
-    font-size: 11px; padding: 2px 8px;
-    border-radius: 20px;
+    font-size: 11px; padding: 2px 8px; border-radius: 20px;
     background: var(--surface2); color: var(--text2);
-    border: 0.5px solid var(--border);
-    font-weight: 400;
+    border: 0.5px solid var(--border); font-weight: 400;
   }
   .item-row {
     display: flex; justify-content: space-between; align-items: center;
-    padding: 5px 0;
-    border-bottom: 0.5px solid var(--border);
-    font-size: 13px;
+    padding: 5px 0; border-bottom: 0.5px solid var(--border); font-size: 13px;
   }
   .item-row:last-child { border-bottom: none; }
   .item-name { color: var(--text2); }
@@ -163,25 +178,18 @@
 
   .log-entry {
     font-size: 13px; color: var(--text2);
-    padding: 8px 0;
-    border-bottom: 0.5px solid var(--border);
-    line-height: 1.5;
+    padding: 8px 0; border-bottom: 0.5px solid var(--border); line-height: 1.5;
   }
   .log-entry:last-child { border-bottom: none; }
   .log-time { font-size: 11px; color: var(--text3); display: block; margin-bottom: 2px; }
 
-  .empty-state {
-    text-align: center; padding: 3rem 1rem;
-    color: var(--text3); font-size: 14px; line-height: 1.8;
-  }
+  .empty-state { text-align: center; padding: 3rem 1rem; color: var(--text3); font-size: 14px; line-height: 1.8; }
   .empty-state i { font-size: 36px; display: block; margin-bottom: 12px; }
 
   .spinner {
     display: inline-block; width: 14px; height: 14px;
-    border: 2px solid var(--border2);
-    border-top-color: var(--text);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
+    border: 2px solid var(--border2); border-top-color: var(--text);
+    border-radius: 50%; animation: spin 0.7s linear infinite;
     vertical-align: -2px; margin-right: 6px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -189,9 +197,25 @@
 </head>
 <body>
 
+<!-- Setup Screen -->
+<div id="setup-screen">
+  <i class="ti ti-building-warehouse"></i>
+  <h1>Lagerfeld</h1>
+  <p>Gib einmalig deinen Anthropic API-Schlüssel ein. Er wird nur auf diesem Gerät gespeichert und nie weitergegeben.</p>
+  <input type="password" id="api-key-input" placeholder="sk-ant-..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+  <button id="save-key-btn" onclick="saveApiKey()">Speichern &amp; starten</button>
+  <div id="setup-error">Ungültiger Schlüssel – er muss mit „sk-ant-" beginnen.</div>
+  <div id="setup-hint">Den Schlüssel findest du auf console.anthropic.com unter „API Keys".</div>
+</div>
+
 <header>
-  <div class="app-name">Lagerfeld</div>
-  <div class="app-sub">Lagerverwaltung</div>
+  <div>
+    <div class="app-name">Lagerfeld</div>
+    <div class="app-sub">Lagerverwaltung</div>
+  </div>
+  <button id="settings-btn" onclick="showSetup()" aria-label="Einstellungen">
+    <i class="ti ti-settings"></i>
+  </button>
 </header>
 
 <div class="tabs">
@@ -201,7 +225,6 @@
 </div>
 
 <main>
-  <!-- Sprachsteuerung -->
   <div id="tab-sprache">
     <div class="mic-card">
       <button id="mic-btn" onclick="toggleMic()" aria-label="Mikrofon starten">
@@ -210,18 +233,11 @@
       <div id="status-text">Tippe oder drücke das Mikrofon</div>
       <div id="transcript-box"></div>
     </div>
-
     <div class="input-row">
       <input type="text" id="text-input" placeholder="Befehl eintippen…" onkeydown="if(event.key==='Enter')sendCommand()" autocomplete="off" autocorrect="off" />
-      <button id="send-btn" onclick="sendCommand()" aria-label="Senden">
-        <i class="ti ti-send"></i>
-      </button>
+      <button id="send-btn" onclick="sendCommand()" aria-label="Senden"><i class="ti ti-send"></i></button>
     </div>
-
-    <div class="hint">
-      Beispiele: „Kreiere ein Lager OMD" · „Füge OMD 3 Akkuschrauber hinzu" · „Entnehme Sahrensdorf 5 Cola" · „Was ist in OMD?" · „Wo sind die Kartenlesegeräte?" · „Was habe ich diese Woche von OMD zur Wohnung gebracht?"
-    </div>
-
+    <div class="hint">Beispiele: „Kreiere ein Lager OMD" · „Füge OMD 3 Akkuschrauber hinzu" · „Entnehme Sahrensdorf 5 Cola" · „Was ist in OMD?" · „Wo sind die Kartenlesegeräte?" · „Was habe ich diese Woche von OMD zur Wohnung gebracht?"</div>
     <div id="response-area" style="display:none;">
       <div class="response-card">
         <div class="response-label">Antwort</div>
@@ -230,21 +246,17 @@
     </div>
   </div>
 
-  <!-- Lager -->
   <div id="tab-lager" style="display:none;">
     <div id="lager-list"></div>
     <div id="lager-empty" class="empty-state" style="display:none;">
-      <i class="ti ti-box-off"></i>
-      Noch keine Lager angelegt.<br>Nutze die Sprachsteuerung!
+      <i class="ti ti-box-off"></i>Noch keine Lager angelegt.<br>Nutze die Sprachsteuerung!
     </div>
   </div>
 
-  <!-- Verlauf -->
   <div id="tab-verlauf" style="display:none;">
     <div id="log-list"></div>
     <div id="log-empty" class="empty-state" style="display:none;">
-      <i class="ti ti-history"></i>
-      Noch keine Aktionen aufgezeichnet.
+      <i class="ti ti-history"></i>Noch keine Aktionen aufgezeichnet.
     </div>
   </div>
 </main>
@@ -260,10 +272,37 @@ function saveDb() {
   try { localStorage.setItem('lagerfeld_db', JSON.stringify(db)); } catch(e) {}
 }
 
+function getApiKey() {
+  return localStorage.getItem('lagerfeld_apikey') || '';
+}
+
+function saveApiKey() {
+  var key = document.getElementById('api-key-input').value.trim();
+  if (!key.startsWith('sk-ant-')) {
+    document.getElementById('setup-error').style.display = '';
+    return;
+  }
+  localStorage.setItem('lagerfeld_apikey', key);
+  document.getElementById('setup-screen').style.display = 'none';
+}
+
+function showSetup() {
+  var key = getApiKey();
+  document.getElementById('api-key-input').value = key;
+  document.getElementById('setup-error').style.display = 'none';
+  document.getElementById('setup-screen').style.display = 'flex';
+}
+
+// Check on load
+window.addEventListener('load', function() {
+  if (getApiKey()) {
+    document.getElementById('setup-screen').style.display = 'none';
+  }
+});
+
 function showTab(tab) {
   currentTab = tab;
-  var tabs = ['sprache','lager','verlauf'];
-  tabs.forEach(function(t, i) {
+  ['sprache','lager','verlauf'].forEach(function(t, i) {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
     document.querySelectorAll('.tab')[i].classList.toggle('active', t === tab);
   });
@@ -294,15 +333,14 @@ function renderLog() {
   var empty = document.getElementById('log-empty');
   if (!db.log.length) { list.innerHTML = ''; empty.style.display = ''; return; }
   empty.style.display = 'none';
-  var reversed = db.log.slice().reverse();
-  list.innerHTML = reversed.map(function(e) {
+  list.innerHTML = db.log.slice().reverse().map(function(e) {
     return '<div class="log-entry"><span class="log-time">' + e.time + '</span>' + e.action + '</div>';
   }).join('');
 }
 
 function logAction(action) {
   var now = new Date();
-  var time = now.toLocaleDateString('de-DE', {day:'2-digit',month:'2-digit',year:'numeric'}) + ' ' + now.toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'});
+  var time = now.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}) + ' ' + now.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
   db.log.push({ time: time, action: action });
   if (db.log.length > 200) db.log = db.log.slice(-200);
   saveDb();
@@ -336,10 +374,7 @@ function setupSpeech() {
 function toggleMic() {
   if (listening) { stopMic(); return; }
   if (!recognition) recognition = setupSpeech();
-  if (!recognition) {
-    document.getElementById('status-text').textContent = 'Spracherkennung nicht verfügbar – bitte Texteingabe nutzen';
-    return;
-  }
+  if (!recognition) { document.getElementById('status-text').textContent = 'Spracherkennung nicht verfügbar – bitte Texteingabe nutzen'; return; }
   listening = true;
   document.getElementById('mic-btn').classList.add('listening');
   document.getElementById('status-text').textContent = 'Höre zu…';
@@ -358,6 +393,10 @@ async function sendCommand() {
   var input = document.getElementById('text-input');
   var cmd = input.value.trim();
   if (!cmd || isProcessing) return;
+
+  var apiKey = getApiKey();
+  if (!apiKey) { showSetup(); return; }
+
   isProcessing = true;
   input.value = '';
   document.getElementById('transcript-box').textContent = '';
@@ -367,12 +406,17 @@ async function sendCommand() {
   responseArea.style.display = '';
   aiResponse.innerHTML = '<span class="spinner"></span>Verarbeite…';
 
-  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App. Du erhältst Sprachbefehle auf Deutsch und führst Lagerverwaltungsoperationen durch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(db.lager, null, 2) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nDu musst IMMER mit einem JSON-Objekt antworten mit diesen Feldern:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "keine"}\n  ]\n}\n\nRegeln:\n- Artikelnamen immer normalisieren (Groß-/Kleinschreibung konsistent)\n- Bei unklarer Menge: 1 annehmen\n- Wenn Lager nicht existiert beim Hinzufügen: zuerst erstellen\n- Bei Bestandsabfragen: nur "keine" als Aktion, Antwort enthält alle relevanten Infos\n- Bei Verlaufsabfragen: das Log analysieren und in der Antwort berichten\n- Antworte immer freundlich und präzise auf Deutsch\n- NUR JSON zurückgeben, kein Markdown, keine Backticks';
+  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App. Du erhältst Sprachbefehle auf Deutsch und führst Lagerverwaltungsoperationen durch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(db.lager, null, 2) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nDu musst IMMER mit einem JSON-Objekt antworten mit diesen Feldern:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "keine"}\n  ]\n}\n\nRegeln:\n- Artikelnamen immer normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Wenn Lager nicht existiert beim Hinzufügen: zuerst erstellen\n- Bei Bestandsabfragen: nur "keine" als Aktion\n- Bei Verlaufsabfragen: Log analysieren und berichten\n- Immer freundlich auf Deutsch antworten\n- NUR JSON zurückgeben, kein Markdown, keine Backticks';
 
   try {
     var resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-allow-browser': 'true'
+      },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
@@ -382,8 +426,18 @@ async function sendCommand() {
     });
 
     var data = await resp.json();
-    var raw = (data.content || []).map(function(b) { return b.text || ''; }).join('');
 
+    if (!resp.ok) {
+      if (resp.status === 401) {
+        aiResponse.textContent = 'Ungültiger API-Schlüssel. Bitte über das ⚙️ Symbol oben rechts korrigieren.';
+      } else {
+        aiResponse.textContent = 'API-Fehler: ' + (data.error && data.error.message || resp.status);
+      }
+      isProcessing = false;
+      return;
+    }
+
+    var raw = (data.content || []).map(function(b) { return b.text || ''; }).join('');
     var parsed;
     try {
       parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
@@ -424,7 +478,7 @@ async function sendCommand() {
     if (currentTab === 'verlauf') renderLog();
 
   } catch(e) {
-    aiResponse.textContent = 'Verbindungsfehler. Bitte prüfe deine Internetverbindung.';
+    aiResponse.textContent = 'Verbindungsfehler: ' + e.message;
   }
 
   isProcessing = false;
