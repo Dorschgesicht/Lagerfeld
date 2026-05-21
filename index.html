@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Lagerfeld">
 <title>Lagerfeld</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #f5f4f0;
@@ -230,6 +231,9 @@
     <div class="app-sub">Lagerverwaltung</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
+    <button class="lager-delete-btn" onclick="exportExcel()" aria-label="Excel exportieren" style="font-size:40px;color:var(--text3);display:flex;align-items:center;line-height:1;">
+      <i class="ti ti-table"></i><i class="ti ti-arrow-up" style="font-size:20px;margin-left:-4px;margin-bottom:14px;"></i>
+    </button>
     <button class="lager-delete-btn" onclick="exportBackup()" aria-label="Backup exportieren" style="font-size:40px;color:var(--text3);display:flex;align-items:center;line-height:1;">
       <i class="ti ti-database"></i><i class="ti ti-arrow-up" style="font-size:20px;margin-left:-4px;margin-bottom:14px;"></i>
     </button>
@@ -355,6 +359,42 @@ function confirmDelete() {
     renderLager();
   }
   closeConfirm();
+}
+
+function exportExcel() {
+  var now = new Date();
+  var pad = function(n) { return n < 10 ? '0' + n : n; };
+  var datum = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+  var filename = 'Lagerfeld-' + datum + '.xlsx';
+
+  // Zeilen aufbauen
+  var rows = [['Lager', 'Gruppe', 'Artikel', 'Menge']];
+  Object.keys(db.lager).sort().forEach(function(lager) {
+    var items = db.lager[lager];
+    // Nach Gruppe sortieren
+    var liste = Object.keys(items).map(function(art) {
+      var obj = items[art];
+      return { artikel: art, gruppe: obj.gruppe || 'Sonstiges', menge: obj.menge || 0 };
+    });
+    liste.sort(function(a, b) { return a.gruppe.localeCompare(b.gruppe) || a.artikel.localeCompare(b.artikel); });
+    liste.forEach(function(item) {
+      rows.push([lager, item.gruppe, item.artikel, item.menge]);
+    });
+  });
+
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+
+  // Spaltenbreiten
+  ws['!cols'] = [{ wch: 20 }, { wch: 18 }, { wch: 28 }, { wch: 10 }];
+
+  // Kopfzeile fett
+  ['A1','B1','C1','D1'].forEach(function(cell) {
+    if (ws[cell]) ws[cell].s = { font: { bold: true } };
+  });
+
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Lagerbestand');
+  XLSX.writeFile(wb, filename);
 }
 
 function exportBackup() {
