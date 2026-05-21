@@ -447,6 +447,35 @@ function importBackup(event) {
   reader.readAsText(file);
 }
 
+// Levenshtein-Distanz für Fuzzy Matching
+function levenshtein(a, b) {
+  a = a.toLowerCase(); b = b.toLowerCase();
+  var m = a.length, n = b.length;
+  var dp = [];
+  for (var i = 0; i <= m; i++) { dp[i] = [i]; }
+  for (var j = 0; j <= n; j++) { dp[0][j] = j; }
+  for (var i = 1; i <= m; i++) {
+    for (var j = 1; j <= n; j++) {
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Findet den ähnlichsten Lagernamen, falls Distanz <= Schwellwert
+function findBestLagerMatch(name) {
+  var lagerNames = Object.keys(db.lager);
+  if (!lagerNames.length) return name;
+  var best = null, bestDist = Infinity;
+  lagerNames.forEach(function(l) {
+    var dist = levenshtein(name, l);
+    // Schwellwert: max 40% der Länge des längeren Begriffs
+    var threshold = Math.floor(Math.max(name.length, l.length) * 0.4);
+    if (dist < bestDist && dist <= threshold) { best = l; bestDist = dist; }
+  });
+  return best || name;
+}
+
 var recognition = null;
 var pendingRename = null; // { lager, altName }
 
@@ -640,7 +669,8 @@ async function sendCommand() {
     });
   });
 
-  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App mit Gruppen-Unterstützung. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges – oder eine vom Nutzer genannte Gruppe.\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "loeschen_lager", "name": "LAGERNAME"},\n    {"typ": "artikel_umbenennen", "lager": "LAGERNAME", "alt": "ALTER_NAME", "neu": "NEUER_NAME"},\n    {"typ": "keine"}\n  ]\n}\n\nRegeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: "Sonstiges" verwenden\n- Gruppe aus dem Kontext erschließen (z.B. "Bacardi" → Alkohol, "Cola" → Softdrink, "Akkuschrauber" → Werkzeug)\n- Lager beim Hinzufügen ggf. zuerst erstellen\n- Bei Abfragen nur "keine" als Aktion, Antwort enthält alle Infos\n- Bei Verlaufsabfragen: Log analysieren\n- NUR JSON, kein Markdown, keine Backticks';
+  var lagerListe = Object.keys(db.lager);
+  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App mit Gruppen-Unterstützung. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVorhandene Lagernamen: ' + JSON.stringify(lagerListe) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges – oder eine vom Nutzer genannte Gruppe.\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "loeschen_lager", "name": "LAGERNAME"},\n    {"typ": "artikel_umbenennen", "lager": "LAGERNAME", "alt": "ALTER_NAME", "neu": "NEUER_NAME"},\n    {"typ": "keine"}\n  ]\n}\n\nWICHTIG – Lagernamen-Matching:\nDie Eingabe kommt oft von einer Spracherkennung und enthält Tippfehler oder falsch erkannte Wörter. Vergleiche jeden genannten Lagernamen IMMER mit der Liste der vorhandenen Lagernamen und verwende den am ähnlichsten klingenden vorhandenen Namen, auch wenn er anders geschrieben ist. Beispiele: "Zahrensdorf" → "Sahrensdorf", "Sahbsdorf" → "Sahrensdorf", "OMT" → "OMD". Erstelle nur dann ein neues Lager, wenn kein vorhandener Name auch nur annähernd passt.\n\nWeitere Regeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: Sonstiges verwenden\n- Gruppe aus dem Kontext erschließen\n- Bei Abfragen nur "keine" als Aktion\n- Bei Verlaufsabfragen: Log analysieren\n- NUR JSON, kein Markdown, keine Backticks';
 
   try {
     var resp = await fetch(PROXY_URL, {
@@ -679,6 +709,8 @@ async function sendCommand() {
     var logParts = [];
 
     aktionen.forEach(function(a) {
+      // Fuzzy-Korrektur: Lagernamen gegen vorhandene abgleichen
+      if (a.lager) a.lager = findBestLagerMatch(a.lager);
       if (a.typ === 'erstelle_lager') {
         if (!db.lager[a.name]) { db.lager[a.name] = {}; logParts.push('Lager "' + a.name + '" erstellt'); }
       } else if (a.typ === 'hinzufuegen') {
