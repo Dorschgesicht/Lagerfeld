@@ -362,7 +362,7 @@ function exportBackup() {
   var pad = function(n) { return n < 10 ? '0' + n : n; };
   var datum = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
   var filename = 'Lagerfeld-Backup-' + datum + '.json';
-  var json = JSON.stringify(db, null, 2);
+  var json = JSON.stringify({ lager: db.lager }, null, 2);
   var blob = new Blob([json], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
@@ -381,9 +381,9 @@ function importBackup(event) {
   reader.onload = function(e) {
     try {
       var imported = JSON.parse(e.target.result);
-      if (!imported.lager || !imported.log) throw new Error('Ungültiges Format');
+      if (!imported.lager) throw new Error('Ungültiges Format');
       if (!confirm('Backup vom ' + file.name + ' laden?\n\nAlle aktuellen Daten werden überschrieben.')) return;
-      db = imported;
+      db.lager = imported.lager;
       // Migration
       Object.keys(db.lager).forEach(function(l) {
         Object.keys(db.lager[l]).forEach(function(a) {
