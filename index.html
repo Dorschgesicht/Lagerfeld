@@ -141,6 +141,32 @@
     font-size: 15px; font-weight: 600; color: var(--text);
     display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
   }
+  .lager-delete-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text3); padding: 2px 4px; font-size: 16px;
+    transition: color 0.15s;
+  }
+  .lager-delete-btn:active { color: var(--red); }
+  .confirm-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    display: flex; align-items: flex-end; justify-content: center;
+    z-index: 200; padding: 0 0 20px;
+  }
+  .confirm-box {
+    background: var(--surface); border-radius: var(--radius);
+    padding: 20px; width: calc(100% - 40px); max-width: 440px;
+    text-align: center;
+  }
+  .confirm-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .confirm-sub { font-size: 13px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
+  .confirm-btns { display: flex; gap: 10px; }
+  .confirm-btn {
+    flex: 1; padding: 12px; border-radius: var(--radius-sm);
+    border: 0.5px solid var(--border2); font-size: 15px;
+    cursor: pointer; font-family: inherit;
+  }
+  .confirm-btn.cancel { background: var(--surface2); color: var(--text); }
+  .confirm-btn.delete { background: var(--red); color: #fff; border-color: var(--red); font-weight: 500; }
   .badge {
     font-size: 11px; padding: 2px 8px; border-radius: 20px;
     background: var(--surface2); color: var(--text2);
@@ -245,6 +271,18 @@
   </div>
 </main>
 
+<!-- Confirm delete overlay -->
+<div id="confirm-overlay" class="confirm-overlay" style="display:none;">
+  <div class="confirm-box">
+    <div class="confirm-title" id="confirm-title">Lager löschen?</div>
+    <div class="confirm-sub" id="confirm-sub"></div>
+    <div class="confirm-btns">
+      <button class="confirm-btn cancel" onclick="closeConfirm()">Abbrechen</button>
+      <button class="confirm-btn delete" onclick="confirmDelete()">Löschen</button>
+    </div>
+  </div>
+</div>
+
 <script>
 var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
 
@@ -262,7 +300,33 @@ Object.keys(db.lager).forEach(function(l) {
   });
 });
 
-var recognition = null;
+var pendingDeleteLager = null;
+
+function askDeleteLager(name) {
+  pendingDeleteLager = name;
+  var count = Object.keys(db.lager[name] || {}).length;
+  document.getElementById('confirm-title').textContent = 'Lager "' + name + '" löschen?';
+  document.getElementById('confirm-sub').textContent = count > 0
+    ? 'Das Lager enthält noch ' + count + ' Artikel. Alle Daten gehen verloren.'
+    : 'Das Lager ist leer. Dieser Schritt kann nicht rückgängig gemacht werden.';
+  document.getElementById('confirm-overlay').style.display = 'flex';
+}
+
+function closeConfirm() {
+  pendingDeleteLager = null;
+  document.getElementById('confirm-overlay').style.display = 'none';
+}
+
+function confirmDelete() {
+  if (pendingDeleteLager && db.lager[pendingDeleteLager] !== undefined) {
+    logAction('Lager "' + pendingDeleteLager + '" gelöscht');
+    delete db.lager[pendingDeleteLager];
+    saveDb();
+    renderLager();
+  }
+  closeConfirm();
+}
+
 var listening = false;
 var currentTab = 'sprache';
 var isProcessing = false;
@@ -330,7 +394,7 @@ function renderLager() {
       });
     }
 
-    return '<div class="lager-card"><div class="lager-card-title"><span>' + name + '</span><span class="badge">' + itemKeys.length + ' Artikel</span></div>' + rows + '</div>';
+    return '<div class="lager-card"><div class="lager-card-title"><span>' + name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="badge">' + itemKeys.length + ' Artikel</span><button class="lager-delete-btn" onclick="askDeleteLager(\'' + name.replace(/'/g, "\\'") + '\')" aria-label="Lager löschen"><i class="ti ti-trash"></i></button></div></div>' + rows + '</div>';
   }).join('');
 }
 
@@ -416,7 +480,7 @@ async function sendCommand() {
     });
   });
 
-  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App mit Gruppen-Unterstützung. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges – oder eine vom Nutzer genannte Gruppe.\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "keine"}\n  ]\n}\n\nRegeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: "Sonstiges" verwenden\n- Gruppe aus dem Kontext erschließen (z.B. "Bacardi" → Alkohol, "Cola" → Softdrink, "Akkuschrauber" → Werkzeug)\n- Lager beim Hinzufügen ggf. zuerst erstellen\n- Bei Abfragen nur "keine" als Aktion, Antwort enthält alle Infos\n- Bei Verlaufsabfragen: Log analysieren\n- NUR JSON, kein Markdown, keine Backticks';
+  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App mit Gruppen-Unterstützung. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges – oder eine vom Nutzer genannte Gruppe.\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "loeschen_lager", "name": "LAGERNAME"},\n    {"typ": "keine"}\n  ]\n}\n\nRegeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: "Sonstiges" verwenden\n- Gruppe aus dem Kontext erschließen (z.B. "Bacardi" → Alkohol, "Cola" → Softdrink, "Akkuschrauber" → Werkzeug)\n- Lager beim Hinzufügen ggf. zuerst erstellen\n- Bei Abfragen nur "keine" als Aktion, Antwort enthält alle Infos\n- Bei Verlaufsabfragen: Log analysieren\n- NUR JSON, kein Markdown, keine Backticks';
 
   try {
     var resp = await fetch(PROXY_URL, {
@@ -481,6 +545,8 @@ async function sendCommand() {
         }
       } else if (a.typ === 'umbenennen') {
         if (db.lager[a.alt]) { db.lager[a.neu] = db.lager[a.alt]; delete db.lager[a.alt]; logParts.push('"' + a.alt + '" → "' + a.neu + '"'); }
+      } else if (a.typ === 'loeschen_lager') {
+        if (db.lager[a.name] !== undefined) { delete db.lager[a.name]; logParts.push('Lager "' + a.name + '" gelöscht'); }
       }
     });
 
