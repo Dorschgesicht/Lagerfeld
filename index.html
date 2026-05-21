@@ -595,10 +595,26 @@ function showTab(tab) {
 }
 
 function getZoneMenge(zone, artikel) {
-  var lager = ZONEN[zone] || [];
+  var lagerNamen = ZONEN[zone] || [];
+  // Wenn Zone nicht in ZONEN, versuche direkt als Lagername
+  if (!ZONEN[zone] && db.lager[zone]) lagerNamen = [zone];
   var total = 0;
-  lager.forEach(function(l) {
-    if (db.lager[l] && db.lager[l][artikel]) total += db.lager[l][artikel].menge || 0;
+  lagerNamen.forEach(function(l) {
+    if (!db.lager[l]) return;
+    // Exakte Suche zuerst
+    if (db.lager[l][artikel]) {
+      total += db.lager[l][artikel].menge || 0;
+      return;
+    }
+    // Fuzzy: case-insensitiv und Levenshtein
+    var artikelLower = artikel.toLowerCase();
+    Object.keys(db.lager[l]).forEach(function(vorhandener) {
+      var dist = levenshtein(artikelLower, vorhandener.toLowerCase());
+      var threshold = Math.floor(Math.max(artikel.length, vorhandener.length) * 0.3);
+      if (dist <= threshold) {
+        total += db.lager[l][vorhandener].menge || 0;
+      }
+    });
   });
   return total;
 }
@@ -629,17 +645,17 @@ function renderWarnungen() {
   var anyWarn = false;
   zonen.forEach(function(zone) {
     var artikel = Object.keys(db.mindest[zone]);
-    var warnRows = '';
+    var rows = '';
     artikel.forEach(function(art) {
       var min = db.mindest[zone][art];
       var ist = getZoneMenge(zone, art);
       if (ist < min) {
         anyWarn = true;
-        warnRows += '<div class="warn-row"><span class="warn-artikel">' + art + '</span><span class="warn-menge">Ist: ' + ist + ' / Min: ' + min + '</span></div>';
+        rows += '<div class="warn-row"><span class="warn-artikel">' + art + '</span><span class="warn-menge">⚠️ Ist: ' + ist + ' / Min: ' + min + '</span></div>';
       }
     });
-    if (warnRows) {
-      warnHtml += '<div class="warn-card"><div class="warn-card-title"><i class="ti ti-alert-triangle"></i>' + zone + '</div>' + warnRows + '</div>';
+    if (rows) {
+      warnHtml += '<div class="warn-card"><div class="warn-card-title"><i class="ti ti-alert-triangle"></i>' + zone + '</div>' + rows + '</div>';
     }
   });
   if (!anyWarn) {
