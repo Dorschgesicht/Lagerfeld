@@ -146,6 +146,11 @@
     background: var(--surface2); color: var(--text2);
     border: 0.5px solid var(--border); font-weight: 400;
   }
+  .gruppe-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text3);
+    padding: 8px 0 4px; margin-top: 4px;
+  }
   .item-row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 5px 0; border-bottom: 0.5px solid var(--border); font-size: 13px;
@@ -214,7 +219,9 @@
       <input type="text" id="text-input" placeholder="Befehl eintippen…" onkeydown="if(event.key==='Enter')sendCommand()" autocomplete="off" autocorrect="off" />
       <button id="send-btn" onclick="sendCommand()" aria-label="Senden"><i class="ti ti-send"></i></button>
     </div>
-    <div class="hint">Beispiele: „Kreiere ein Lager OMD" · „Füge OMD 3 Akkuschrauber hinzu" · „Entnehme Sahrensdorf 5 Cola" · „Was ist in OMD?" · „Wo sind die Kartenlesegeräte?" · „Was habe ich diese Woche von OMD zur Wohnung gebracht?"</div>
+    <div class="hint">
+      Beispiele: „Füge OMD 3 Akkuschrauber als Werkzeug hinzu" · „Entnehme Sahrensdorf 5 Cola" · „Was ist in OMD?" · „Zeige alle Werkzeuge im Lager OMD" · „Wo sind alle Softdrinks?" · „In welchem Lager sind die Kartenlesegeräte?"
+    </div>
     <div id="response-area" style="display:none;">
       <div class="response-card">
         <div class="response-label">Antwort</div>
@@ -240,14 +247,28 @@
 
 <script>
 var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
-var db = JSON.parse(localStorage.getItem('lagerfeld_db') || 'null') || { lager: {}, log: [] };
+
+// DB-Struktur:
+// db.lager[lagerName][artikelName] = { menge: N, gruppe: "Werkzeug" }
+// Migration: Falls alter Eintrag noch eine Zahl ist, konvertieren
+var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [] };
+
+// Migration alter Datenstruktur (Zahl → Objekt)
+Object.keys(db.lager).forEach(function(l) {
+  Object.keys(db.lager[l]).forEach(function(a) {
+    if (typeof db.lager[l][a] === 'number') {
+      db.lager[l][a] = { menge: db.lager[l][a], gruppe: 'Sonstiges' };
+    }
+  });
+});
+
 var recognition = null;
 var listening = false;
 var currentTab = 'sprache';
 var isProcessing = false;
 
 function saveDb() {
-  try { localStorage.setItem('lagerfeld_db', JSON.stringify(db)); } catch(e) {}
+  try { localStorage.setItem('lagerfeld_db2', JSON.stringify(db)); } catch(e) {}
 }
 function getApiKey() { return localStorage.getItem('lagerfeld_apikey') || ''; }
 function saveApiKey() {
@@ -281,12 +302,34 @@ function renderLager() {
   var empty = document.getElementById('lager-empty');
   if (!keys.length) { list.innerHTML = ''; empty.style.display = ''; return; }
   empty.style.display = 'none';
+
   list.innerHTML = keys.map(function(name) {
     var items = db.lager[name];
     var itemKeys = Object.keys(items);
-    var rows = itemKeys.length
-      ? itemKeys.map(function(k) { return '<div class="item-row"><span class="item-name">' + k + '</span><span class="item-qty">' + items[k] + 'x</span></div>'; }).join('')
-      : '<div style="font-size:13px;color:var(--text3);padding:4px 0;">Leer</div>';
+
+    // Gruppieren
+    var gruppen = {};
+    itemKeys.forEach(function(k) {
+      var obj = items[k];
+      var g = (obj && obj.gruppe) ? obj.gruppe : 'Sonstiges';
+      var m = (obj && obj.menge !== undefined) ? obj.menge : obj;
+      if (!gruppen[g]) gruppen[g] = [];
+      gruppen[g].push({ name: k, menge: m });
+    });
+
+    var gruppenKeys = Object.keys(gruppen).sort();
+    var rows = '';
+    if (!gruppenKeys.length) {
+      rows = '<div style="font-size:13px;color:var(--text3);padding:4px 0;">Leer</div>';
+    } else {
+      gruppenKeys.forEach(function(g) {
+        rows += '<div class="gruppe-label">' + g + '</div>';
+        gruppen[g].forEach(function(item) {
+          rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><span class="item-qty">' + item.menge + 'x</span></div>';
+        });
+      });
+    }
+
     return '<div class="lager-card"><div class="lager-card-title"><span>' + name + '</span><span class="badge">' + itemKeys.length + ' Artikel</span></div>' + rows + '</div>';
   }).join('');
 }
@@ -363,7 +406,17 @@ async function sendCommand() {
   responseArea.style.display = '';
   aiResponse.innerHTML = '<span class="spinner"></span>Verarbeite…';
 
-  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App. Du erhältst Befehle auf Deutsch und führst Lagerverwaltungsoperationen durch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(db.lager, null, 2) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "keine"}\n  ]\n}\n\nRegeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Lager beim Hinzufügen ggf. zuerst erstellen\n- Bei Abfragen nur "keine" als Aktion\n- Immer freundlich auf Deutsch antworten\n- NUR JSON, kein Markdown, keine Backticks';
+  // Kompakte DB-Darstellung für den Prompt
+  var dbSummary = {};
+  Object.keys(db.lager).forEach(function(l) {
+    dbSummary[l] = {};
+    Object.keys(db.lager[l]).forEach(function(a) {
+      var obj = db.lager[l][a];
+      dbSummary[l][a] = { menge: obj.menge, gruppe: obj.gruppe };
+    });
+  });
+
+  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App mit Gruppen-Unterstützung. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges – oder eine vom Nutzer genannte Gruppe.\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "keine"}\n  ]\n}\n\nRegeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: "Sonstiges" verwenden\n- Gruppe aus dem Kontext erschließen (z.B. "Bacardi" → Alkohol, "Cola" → Softdrink, "Akkuschrauber" → Werkzeug)\n- Lager beim Hinzufügen ggf. zuerst erstellen\n- Bei Abfragen nur "keine" als Aktion, Antwort enthält alle Infos\n- Bei Verlaufsabfragen: Log analysieren\n- NUR JSON, kein Markdown, keine Backticks';
 
   try {
     var resp = await fetch(PROXY_URL, {
@@ -405,16 +458,26 @@ async function sendCommand() {
       if (a.typ === 'erstelle_lager') {
         if (!db.lager[a.name]) { db.lager[a.name] = {}; logParts.push('Lager "' + a.name + '" erstellt'); }
       } else if (a.typ === 'hinzufuegen') {
-        var n = a.lager, art = a.artikel, m = Number(a.menge) || 1;
+        var n = a.lager, art = a.artikel, m = Number(a.menge) || 1, g = a.gruppe || 'Sonstiges';
         if (!db.lager[n]) db.lager[n] = {};
-        db.lager[n][art] = (db.lager[n][art] || 0) + m;
-        logParts.push('+' + m + 'x ' + art + ' → ' + n);
+        if (db.lager[n][art]) {
+          db.lager[n][art].menge += m;
+          if (a.gruppe) db.lager[n][art].gruppe = g;
+        } else {
+          db.lager[n][art] = { menge: m, gruppe: g };
+        }
+        logParts.push('+' + m + 'x ' + art + ' [' + g + '] → ' + n);
       } else if (a.typ === 'entnehmen') {
         var n = a.lager, art = a.artikel, m = Number(a.menge) || 1;
-        if (db.lager[n] && db.lager[n][art] !== undefined) {
-          db.lager[n][art] = Math.max(0, db.lager[n][art] - m);
-          if (db.lager[n][art] === 0) delete db.lager[n][art];
+        if (db.lager[n] && db.lager[n][art]) {
+          db.lager[n][art].menge = Math.max(0, db.lager[n][art].menge - m);
+          if (db.lager[n][art].menge === 0) delete db.lager[n][art];
           logParts.push('-' + m + 'x ' + art + ' ← ' + n);
+        }
+      } else if (a.typ === 'gruppe_aendern') {
+        if (db.lager[a.lager] && db.lager[a.lager][a.artikel]) {
+          db.lager[a.lager][a.artikel].gruppe = a.gruppe;
+          logParts.push('"' + a.artikel + '" in ' + a.lager + ' → Gruppe: ' + a.gruppe);
         }
       } else if (a.typ === 'umbenennen') {
         if (db.lager[a.alt]) { db.lager[a.neu] = db.lager[a.alt]; delete db.lager[a.alt]; logParts.push('"' + a.alt + '" → "' + a.neu + '"'); }
