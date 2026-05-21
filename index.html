@@ -229,9 +229,13 @@
     <div class="app-name">Lagerfeld</div>
     <div class="app-sub">Lagerverwaltung</div>
   </div>
-  <button id="settings-btn" onclick="showSetup()" aria-label="Einstellungen">
-    <i class="ti ti-settings"></i>
-  </button>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button class="lager-delete-btn" onclick="exportBackup()" aria-label="Backup exportieren" style="font-size:20px;color:var(--text3);"><i class="ti ti-database-export"></i></button>
+    <label class="lager-delete-btn" aria-label="Backup importieren" style="font-size:20px;color:var(--text3);cursor:pointer;"><i class="ti ti-database-import"></i><input type="file" id="import-input" accept=".json" style="display:none;" onchange="importBackup(event)"></label>
+    <button id="settings-btn" onclick="showSetup()" aria-label="Einstellungen">
+      <i class="ti ti-settings"></i>
+    </button>
+  </div>
 </header>
 
 <div class="tabs">
@@ -346,6 +350,53 @@ function confirmDelete() {
     renderLager();
   }
   closeConfirm();
+}
+
+function exportBackup() {
+  var now = new Date();
+  var pad = function(n) { return n < 10 ? '0' + n : n; };
+  var datum = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+  var filename = 'Lagerfeld-Backup-' + datum + '.json';
+  var json = JSON.stringify(db, null, 2);
+  var blob = new Blob([json], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function importBackup(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var imported = JSON.parse(e.target.result);
+      if (!imported.lager || !imported.log) throw new Error('Ungültiges Format');
+      if (!confirm('Backup vom ' + file.name + ' laden?\n\nAlle aktuellen Daten werden überschrieben.')) return;
+      db = imported;
+      // Migration
+      Object.keys(db.lager).forEach(function(l) {
+        Object.keys(db.lager[l]).forEach(function(a) {
+          if (typeof db.lager[l][a] === 'number') {
+            db.lager[l][a] = { menge: db.lager[l][a], gruppe: 'Sonstiges' };
+          }
+        });
+      });
+      saveDb();
+      renderLager();
+      renderLog();
+      alert('Backup erfolgreich geladen!');
+    } catch(err) {
+      alert('Fehler beim Laden: ' + err.message);
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 var pendingRename = null; // { lager, altName }
