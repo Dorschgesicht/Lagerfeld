@@ -88,6 +88,33 @@
     background: transparent; color: var(--text2); cursor: pointer; font-family: inherit;
   }
   .tab.active { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 500; }
+  .tab.warn { border-color: var(--red); color: var(--red); }
+  .tab.warn.active { background: var(--red); color: #fff; border-color: var(--red); }
+
+  .warn-card {
+    background: var(--surface); border-radius: var(--radius);
+    border: 1px solid var(--red); padding: 14px 16px; margin-bottom: 10px;
+  }
+  .warn-card-title {
+    font-size: 14px; font-weight: 600; color: var(--red);
+    display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+  }
+  .warn-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0; border-bottom: 0.5px solid var(--border); font-size: 13px;
+  }
+  .warn-row:last-child { border-bottom: none; }
+  .warn-artikel { color: var(--text2); }
+  .warn-menge { color: var(--red); font-weight: 600; }
+  .warn-menge-ok { color: var(--text3); font-weight: 400; }
+  .mindest-section { margin-bottom: 16px; }
+  .mindest-title { font-size: 12px; font-weight: 600; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 8px; }
+  .mindest-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0; border-bottom: 0.5px solid var(--border); font-size: 13px;
+  }
+  .mindest-row:last-child { border-bottom: none; }
+  .mindest-card { background: var(--surface); border-radius: var(--radius); border: 0.5px solid var(--border); padding: 14px 16px; margin-bottom: 10px; }
 
   main { flex: 1; overflow-y: auto; padding: 16px 20px 100px; }
 
@@ -249,6 +276,7 @@
 <div class="tabs">
   <button class="tab active" onclick="showTab('sprache')">Sprachsteuerung</button>
   <button class="tab" onclick="showTab('lager')">Lager</button>
+  <button class="tab" id="tab-btn-warnungen" onclick="showTab('warnungen')">Warnungen</button>
   <button class="tab" onclick="showTab('verlauf')">Verlauf</button>
 </div>
 
@@ -280,6 +308,15 @@
     <div id="lager-list"></div>
     <div id="lager-empty" class="empty-state" style="display:none;">
       <i class="ti ti-box-off"></i>Noch keine Lager angelegt.<br>Nutze die Sprachsteuerung!
+    </div>
+  </div>
+
+  <div id="tab-warnungen" style="display:none;">
+    <div id="warn-list"></div>
+    <div class="mindest-card" style="margin-top:8px;">
+      <div class="mindest-title">Festgelegte Mindestbestände</div>
+      <div id="mindest-list"></div>
+      <div id="mindest-empty" style="font-size:13px;color:var(--text3);padding:4px 0;display:none;">Noch keine Mindestbestände festgelegt.</div>
     </div>
   </div>
 
@@ -322,7 +359,14 @@ var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
 // DB-Struktur:
 // db.lager[lagerName][artikelName] = { menge: N, gruppe: "Werkzeug" }
 // Migration: Falls alter Eintrag noch eine Zahl ist, konvertieren
-var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [] };
+var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {} };
+if (!db.mindest) db.mindest = {};
+// mindest struktur: { "zone_name": { "artikel": menge } }
+// Vordefinierte Zonen
+var ZONEN = {
+  'Sahrensdorf': ['Sahrensdorf'],
+  'Hinten + Rapa Bar': ['Hinten', 'Rapa Bar']
+};
 
 // Migration alter Datenstruktur (Zahl → Objekt)
 Object.keys(db.lager).forEach(function(l) {
@@ -520,6 +564,7 @@ var isProcessing = false;
 
 function saveDb() {
   try { localStorage.setItem('lagerfeld_db2', JSON.stringify(db)); } catch(e) {}
+  updateWarnTab();
 }
 function getApiKey() { return localStorage.getItem('lagerfeld_apikey') || ''; }
 function saveApiKey() {
@@ -535,16 +580,90 @@ function showSetup() {
 }
 window.addEventListener('load', function() {
   if (getApiKey()) document.getElementById('setup-screen').style.display = 'none';
+  updateWarnTab();
 });
 
 function showTab(tab) {
   currentTab = tab;
-  ['sprache','lager','verlauf'].forEach(function(t, i) {
+  ['sprache','lager','warnungen','verlauf'].forEach(function(t, i) {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
     document.querySelectorAll('.tab')[i].classList.toggle('active', t === tab);
   });
   if (tab === 'lager') renderLager();
   if (tab === 'verlauf') renderLog();
+  if (tab === 'warnungen') renderWarnungen();
+}
+
+function getZoneMenge(zone, artikel) {
+  var lager = ZONEN[zone] || [];
+  var total = 0;
+  lager.forEach(function(l) {
+    if (db.lager[l] && db.lager[l][artikel]) total += db.lager[l][artikel].menge || 0;
+  });
+  return total;
+}
+
+function updateWarnTab() {
+  var hasWarn = false;
+  var zonen = Object.keys(db.mindest);
+  zonen.forEach(function(zone) {
+    Object.keys(db.mindest[zone]).forEach(function(artikel) {
+      var min = db.mindest[zone][artikel];
+      var ist = getZoneMenge(zone, artikel);
+      if (ist < min) hasWarn = true;
+    });
+  });
+  var btn = document.getElementById('tab-btn-warnungen');
+  if (hasWarn) { btn.classList.add('warn'); btn.textContent = '⚠️ Warnungen'; }
+  else { btn.classList.remove('warn'); btn.textContent = 'Warnungen'; }
+}
+
+function renderWarnungen() {
+  var list = document.getElementById('warn-list');
+  var mindestList = document.getElementById('mindest-list');
+  var mindestEmpty = document.getElementById('mindest-empty');
+
+  // Warnungen
+  var warnHtml = '';
+  var zonen = Object.keys(db.mindest);
+  var anyWarn = false;
+  zonen.forEach(function(zone) {
+    var artikel = Object.keys(db.mindest[zone]);
+    var warnRows = '';
+    artikel.forEach(function(art) {
+      var min = db.mindest[zone][art];
+      var ist = getZoneMenge(zone, art);
+      if (ist < min) {
+        anyWarn = true;
+        warnRows += '<div class="warn-row"><span class="warn-artikel">' + art + '</span><span class="warn-menge">Ist: ' + ist + ' / Min: ' + min + '</span></div>';
+      }
+    });
+    if (warnRows) {
+      warnHtml += '<div class="warn-card"><div class="warn-card-title"><i class="ti ti-alert-triangle"></i>' + zone + '</div>' + warnRows + '</div>';
+    }
+  });
+  if (!anyWarn) {
+    warnHtml = '<div class="empty-state"><i class="ti ti-circle-check" style="color:var(--text3)"></i>Alle Bestände in Ordnung.</div>';
+  }
+  list.innerHTML = warnHtml;
+
+  // Mindestbestände Übersicht
+  var allMindest = [];
+  zonen.forEach(function(zone) {
+    Object.keys(db.mindest[zone]).forEach(function(art) {
+      allMindest.push({ zone: zone, artikel: art, min: db.mindest[zone][art], ist: getZoneMenge(zone, art) });
+    });
+  });
+  if (!allMindest.length) {
+    mindestList.innerHTML = '';
+    mindestEmpty.style.display = '';
+  } else {
+    mindestEmpty.style.display = 'none';
+    mindestList.innerHTML = allMindest.map(function(m) {
+      var farbe = m.ist < m.min ? 'var(--red)' : 'var(--text2)';
+      return '<div class="mindest-row"><span style="color:var(--text2);">' + m.artikel + '<br><span style="font-size:11px;color:var(--text3);">' + m.zone + '</span></span><span style="color:' + farbe + ';font-weight:500;">' + m.ist + ' / ' + m.min + '</span></div>';
+    }).join('');
+  }
 }
 
 function renderLager() {
@@ -670,7 +789,7 @@ async function sendCommand() {
   });
 
   var lagerListe = Object.keys(db.lager);
-  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App mit Gruppen-Unterstützung. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVorhandene Lagernamen: ' + JSON.stringify(lagerListe) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges – oder eine vom Nutzer genannte Gruppe.\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "loeschen_lager", "name": "LAGERNAME"},\n    {"typ": "artikel_umbenennen", "lager": "LAGERNAME", "alt": "ALTER_NAME", "neu": "NEUER_NAME"},\n    {"typ": "keine"}\n  ]\n}\n\nWICHTIG – Lagernamen-Matching:\nDie Eingabe kommt oft von einer Spracherkennung und enthält Tippfehler oder falsch erkannte Wörter. Vergleiche jeden genannten Lagernamen IMMER mit der Liste der vorhandenen Lagernamen und verwende den am ähnlichsten klingenden vorhandenen Namen, auch wenn er anders geschrieben ist. Beispiele: "Zahrensdorf" → "Sahrensdorf", "Sahbsdorf" → "Sahrensdorf", "OMT" → "OMD". Erstelle nur dann ein neues Lager, wenn kein vorhandener Name auch nur annähernd passt.\n\nWeitere Regeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: Sonstiges verwenden\n- Gruppe aus dem Kontext erschließen\n- Bei Abfragen nur "keine" als Aktion\n- Bei Verlaufsabfragen: Log analysieren\n- NUR JSON, kein Markdown, keine Backticks';
+  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App mit Gruppen-Unterstützung. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVorhandene Lagernamen: ' + JSON.stringify(lagerListe) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges – oder eine vom Nutzer genannte Gruppe.\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "loeschen_lager", "name": "LAGERNAME"},\n    {"typ": "artikel_umbenennen", "lager": "LAGERNAME", "alt": "ALTER_NAME", "neu": "NEUER_NAME"},\n    {"typ": "mindest_setzen", "zone": "ZONENNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "keine"}\n  ]\n}\n\nVordefinierte Zonen für Mindestbestände:\n- "Sahrensdorf" (umfasst nur das Lager Sahrensdorf)\n- "Hinten + Rapa Bar" (umfasst die Lager Hinten und Rapa Bar zusammen)\n\nMindestbestände gelten nur für Gruppen Alkohol und Softdrink.\n\nWICHTIG – Lagernamen-Matching:\nDie Eingabe kommt oft von einer Spracherkennung und enthält Tippfehler oder falsch erkannte Wörter. Vergleiche jeden genannten Lagernamen IMMER mit der Liste der vorhandenen Lagernamen und verwende den am ähnlichsten klingenden vorhandenen Namen, auch wenn er anders geschrieben ist. Beispiele: "Zahrensdorf" → "Sahrensdorf", "Sahbsdorf" → "Sahrensdorf", "OMT" → "OMD". Erstelle nur dann ein neues Lager, wenn kein vorhandener Name auch nur annähernd passt.\n\nWeitere Regeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: Sonstiges verwenden\n- Gruppe aus dem Kontext erschließen\n- Bei Abfragen nur "keine" als Aktion\n- Bei Verlaufsabfragen: Log analysieren\n- NUR JSON, kein Markdown, keine Backticks';
 
   try {
     var resp = await fetch(PROXY_URL, {
@@ -746,6 +865,10 @@ async function sendCommand() {
           delete db.lager[l][a.alt];
           logParts.push('Artikel "' + a.alt + '" → "' + a.neu + '" in ' + l);
         }
+      } else if (a.typ === 'mindest_setzen') {
+        if (!db.mindest[a.zone]) db.mindest[a.zone] = {};
+        db.mindest[a.zone][a.artikel] = Number(a.menge) || 0;
+        logParts.push('Mindestbestand ' + a.artikel + ' in ' + a.zone + ': ' + a.menge);
       }
     });
 
@@ -754,6 +877,7 @@ async function sendCommand() {
     aiResponse.textContent = parsed.antwort || 'Erledigt.';
     if (currentTab === 'lager') renderLager();
     if (currentTab === 'verlauf') renderLog();
+    if (currentTab === 'warnungen') renderWarnungen();
 
   } catch(e) {
     aiResponse.textContent = 'Verbindungsfehler: ' + e.message;
