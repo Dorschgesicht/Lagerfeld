@@ -8,7 +8,6 @@
 <meta name="apple-mobile-web-app-title" content="Lagerfeld">
 <title>Lagerfeld</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #f5f4f0;
@@ -365,13 +364,12 @@ function exportExcel() {
   var now = new Date();
   var pad = function(n) { return n < 10 ? '0' + n : n; };
   var datum = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
-  var filename = 'Lagerfeld-' + datum + '.xlsx';
+  var filename = 'Lagerfeld-' + datum + '.csv';
 
   // Zeilen aufbauen
   var rows = [['Lager', 'Gruppe', 'Artikel', 'Menge']];
   Object.keys(db.lager).sort().forEach(function(lager) {
     var items = db.lager[lager];
-    // Nach Gruppe sortieren
     var liste = Object.keys(items).map(function(art) {
       var obj = items[art];
       return { artikel: art, gruppe: obj.gruppe || 'Sonstiges', menge: obj.menge || 0 };
@@ -382,19 +380,24 @@ function exportExcel() {
     });
   });
 
-  var ws = XLSX.utils.aoa_to_sheet(rows);
+  // CSV mit Semikolon (Excel-Standard in Deutschland)
+  var csv = '\uFEFF' + rows.map(function(row) {
+    return row.map(function(cell) {
+      var s = String(cell);
+      if (s.includes(';') || s.includes('"') || s.includes('\n')) s = '"' + s.replace(/"/g, '""') + '"';
+      return s;
+    }).join(';');
+  }).join('\r\n');
 
-  // Spaltenbreiten
-  ws['!cols'] = [{ wch: 20 }, { wch: 18 }, { wch: 28 }, { wch: 10 }];
-
-  // Kopfzeile fett
-  ['A1','B1','C1','D1'].forEach(function(cell) {
-    if (ws[cell]) ws[cell].s = { font: { bold: true } };
-  });
-
-  var wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Lagerbestand');
-  XLSX.writeFile(wb, filename);
+  var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function exportBackup() {
