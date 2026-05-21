@@ -167,6 +167,14 @@
   }
   .confirm-btn.cancel { background: var(--surface2); color: var(--text); }
   .confirm-btn.delete { background: var(--red); color: #fff; border-color: var(--red); font-weight: 500; }
+  .rename-input {
+    width: 100%; font-size: 15px; padding: 10px 14px;
+    border-radius: var(--radius-sm); border: 0.5px solid var(--border2);
+    background: var(--surface); color: var(--text);
+    font-family: inherit; outline: none; margin-bottom: 14px;
+  }
+  .rename-input:focus { border-color: var(--text); }
+  .confirm-btn.save { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 500; }
   .badge {
     font-size: 11px; padding: 2px 8px; border-radius: 20px;
     background: var(--surface2); color: var(--text2);
@@ -283,6 +291,19 @@
   </div>
 </div>
 
+<!-- Rename article overlay -->
+<div id="rename-overlay" class="confirm-overlay" style="display:none;">
+  <div class="confirm-box">
+    <div class="confirm-title">Artikel umbenennen</div>
+    <div class="confirm-sub" id="rename-sub"></div>
+    <input type="text" id="rename-input" class="rename-input" autocorrect="off" autocapitalize="words" />
+    <div class="confirm-btns">
+      <button class="confirm-btn cancel" onclick="closeRename()">Abbrechen</button>
+      <button class="confirm-btn save" onclick="confirmRename()">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <script>
 var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
 
@@ -327,7 +348,43 @@ function confirmDelete() {
   closeConfirm();
 }
 
-var recognition = null;
+var pendingRename = null; // { lager, altName }
+
+function askRenameArtikel(lager, artName) {
+  pendingRename = { lager: lager, altName: artName };
+  document.getElementById('rename-sub').textContent = 'Neuer Name für „' + artName + '" in Lager „' + lager + '"';
+  document.getElementById('rename-input').value = artName;
+  document.getElementById('rename-overlay').style.display = 'flex';
+  setTimeout(function() { document.getElementById('rename-input').focus(); }, 100);
+}
+
+function closeRename() {
+  pendingRename = null;
+  document.getElementById('rename-overlay').style.display = 'none';
+}
+
+function confirmRename() {
+  if (!pendingRename) return;
+  var neuName = document.getElementById('rename-input').value.trim();
+  if (!neuName || neuName === pendingRename.altName) { closeRename(); return; }
+  var l = pendingRename.lager, alt = pendingRename.altName;
+  if (db.lager[l] && db.lager[l][alt]) {
+    db.lager[l][neuName] = db.lager[l][alt];
+    delete db.lager[l][alt];
+    logAction('Artikel "' + alt + '" → "' + neuName + '" in Lager "' + l + '"');
+    saveDb();
+    renderLager();
+  }
+  closeRename();
+}
+
+// Enter-Taste im Rename-Input
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('rename-input').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') confirmRename();
+  });
+});
+
 var listening = false;
 var currentTab = 'sprache';
 var isProcessing = false;
@@ -390,7 +447,9 @@ function renderLager() {
       gruppenKeys.forEach(function(g) {
         rows += '<div class="gruppe-label">' + g + '</div>';
         gruppen[g].forEach(function(item) {
-          rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><span class="item-qty">' + item.menge + 'x</span></div>';
+          var safeLager = name.replace(/'/g, "\\'");
+          var safeArtikel = item.name.replace(/'/g, "\\'");
+          rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + item.menge + 'x</span><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeLager + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
         });
       });
     }
@@ -481,7 +540,7 @@ async function sendCommand() {
     });
   });
 
-  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App mit Gruppen-Unterstützung. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges – oder eine vom Nutzer genannte Gruppe.\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "loeschen_lager", "name": "LAGERNAME"},\n    {"typ": "keine"}\n  ]\n}\n\nRegeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: "Sonstiges" verwenden\n- Gruppe aus dem Kontext erschließen (z.B. "Bacardi" → Alkohol, "Cola" → Softdrink, "Akkuschrauber" → Werkzeug)\n- Lager beim Hinzufügen ggf. zuerst erstellen\n- Bei Abfragen nur "keine" als Aktion, Antwort enthält alle Infos\n- Bei Verlaufsabfragen: Log analysieren\n- NUR JSON, kein Markdown, keine Backticks';
+  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App mit Gruppen-Unterstützung. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges – oder eine vom Nutzer genannte Gruppe.\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "loeschen_lager", "name": "LAGERNAME"},\n    {"typ": "artikel_umbenennen", "lager": "LAGERNAME", "alt": "ALTER_NAME", "neu": "NEUER_NAME"},\n    {"typ": "keine"}\n  ]\n}\n\nRegeln:\n- Artikelnamen normalisieren\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: "Sonstiges" verwenden\n- Gruppe aus dem Kontext erschließen (z.B. "Bacardi" → Alkohol, "Cola" → Softdrink, "Akkuschrauber" → Werkzeug)\n- Lager beim Hinzufügen ggf. zuerst erstellen\n- Bei Abfragen nur "keine" als Aktion, Antwort enthält alle Infos\n- Bei Verlaufsabfragen: Log analysieren\n- NUR JSON, kein Markdown, keine Backticks';
 
   try {
     var resp = await fetch(PROXY_URL, {
@@ -548,6 +607,13 @@ async function sendCommand() {
         if (db.lager[a.alt]) { db.lager[a.neu] = db.lager[a.alt]; delete db.lager[a.alt]; logParts.push('"' + a.alt + '" → "' + a.neu + '"'); }
       } else if (a.typ === 'loeschen_lager') {
         if (db.lager[a.name] !== undefined) { delete db.lager[a.name]; logParts.push('Lager "' + a.name + '" gelöscht'); }
+      } else if (a.typ === 'artikel_umbenennen') {
+        var l = a.lager;
+        if (db.lager[l] && db.lager[l][a.alt]) {
+          db.lager[l][a.neu] = db.lager[l][a.alt];
+          delete db.lager[l][a.alt];
+          logParts.push('Artikel "' + a.alt + '" → "' + a.neu + '" in ' + l);
+        }
       }
     });
 
