@@ -882,9 +882,22 @@ async function sendCommand() {
           logParts.push('Artikel "' + a.alt + '" → "' + a.neu + '" in ' + l);
         }
       } else if (a.typ === 'mindest_setzen') {
-        if (!db.mindest[a.zone]) db.mindest[a.zone] = {};
-        db.mindest[a.zone][a.artikel] = Number(a.menge) || 0;
-        logParts.push('Mindestbestand ' + a.artikel + ' in ' + a.zone + ': ' + a.menge);
+        // Zone auf bekannte Zonen mappen (Fuzzy)
+        var zoneKey = a.zone;
+        var besteZone = null, besteZoneDist = Infinity;
+        Object.keys(ZONEN).forEach(function(z) {
+          var dist = levenshtein(a.zone.toLowerCase(), z.toLowerCase());
+          if (dist < besteZoneDist) { besteZone = z; besteZoneDist = dist; }
+          // Auch prüfen ob einzelner Lagername zur Zone gehört
+          ZONEN[z].forEach(function(l) {
+            var d = levenshtein(a.zone.toLowerCase(), l.toLowerCase());
+            if (d < besteZoneDist) { besteZone = z; besteZoneDist = d; }
+          });
+        });
+        if (besteZone) zoneKey = besteZone;
+        if (!db.mindest[zoneKey]) db.mindest[zoneKey] = {};
+        db.mindest[zoneKey][a.artikel] = Number(a.menge) || 0;
+        logParts.push('Mindestbestand ' + a.artikel + ' in Zone "' + zoneKey + '": ' + a.menge);
       }
     });
 
