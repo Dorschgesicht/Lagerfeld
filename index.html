@@ -404,6 +404,7 @@ function importBackup(event) {
   reader.readAsText(file);
 }
 
+var recognition = null;
 var pendingRename = null; // { lager, altName }
 
 function askRenameArtikel(lager, artName) {
