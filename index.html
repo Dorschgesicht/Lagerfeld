@@ -520,6 +520,15 @@ function findBestLagerMatch(name) {
   return best || name;
 }
 
+function deleteMindest(zone, artikel) {
+  if (!db.mindest[zone] || db.mindest[zone][artikel] === undefined) return;
+  delete db.mindest[zone][artikel];
+  if (Object.keys(db.mindest[zone]).length === 0) delete db.mindest[zone];
+  logAction('Mindestbestand "' + artikel + '" in Zone "' + zone + '" manuell gelöscht');
+  saveDb();
+  renderWarnungen();
+}
+
 var recognition = null;
 var pendingRename = null; // { lager, altName }
 
@@ -663,9 +672,9 @@ function renderWarnungen() {
   }
   list.innerHTML = warnHtml;
 
-  // Mindestbestände Übersicht
+  // Mindestbestände Übersicht – alle Einträge inkl. unbekannte Zonen
   var allMindest = [];
-  zonen.forEach(function(zone) {
+  Object.keys(db.mindest).forEach(function(zone) {
     Object.keys(db.mindest[zone]).forEach(function(art) {
       allMindest.push({ zone: zone, artikel: art, min: db.mindest[zone][art], ist: getZoneMenge(zone, art) });
     });
@@ -677,7 +686,14 @@ function renderWarnungen() {
     mindestEmpty.style.display = 'none';
     mindestList.innerHTML = allMindest.map(function(m) {
       var farbe = m.ist < m.min ? 'var(--red)' : 'var(--text2)';
-      return '<div class="mindest-row"><span style="color:var(--text2);">' + m.artikel + '<br><span style="font-size:11px;color:var(--text3);">' + m.zone + '</span></span><span style="color:' + farbe + ';font-weight:500;">' + m.ist + ' / ' + m.min + '</span></div>';
+      var safeZone = m.zone.replace(/'/g, "\\'");
+      var safeArt = m.artikel.replace(/'/g, "\\'");
+      return '<div class="mindest-row">'
+        + '<span style="color:var(--text2);">' + m.artikel + '<br><span style="font-size:11px;color:var(--text3);">' + m.zone + '</span></span>'
+        + '<div style="display:flex;align-items:center;gap:10px;">'
+        + '<span style="color:' + farbe + ';font-weight:500;">' + m.ist + ' / ' + m.min + '</span>'
+        + '<button class="lager-delete-btn" onclick="deleteMindest(\'' + safeZone + '\',\'' + safeArt + '\')" aria-label="Löschen" style="font-size:16px;color:var(--text3);"><i class="ti ti-trash"></i></button>'
+        + '</div></div>';
     }).join('');
   }
 }
