@@ -386,10 +386,11 @@ var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
 // DB-Struktur:
 // db.lager[lagerName][artikelName] = { menge: N, gruppe: "Werkzeug" }
 // Migration: Falls alter Eintrag noch eine Zahl ist, konvertieren
-var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {} };
+var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {} };
 if (!db.mindest) db.mindest = {};
 if (!db.lagerOrder) db.lagerOrder = [];
 if (!db.collapsed) db.collapsed = {};
+if (!db.sortMode) db.sortMode = {};
 // Sync lagerOrder mit tatsächlichen Lagern
 function syncLagerOrder() {
   var keys = Object.keys(db.lager);
@@ -735,6 +736,12 @@ function renderWarnungen() {
   }
 }
 
+function toggleSort(name) {
+  db.sortMode[name] = db.sortMode[name] === 'abc' ? 'grp' : 'abc';
+  saveDb();
+  renderLager();
+}
+
 function renderLager() {
   syncLagerOrder();
   var list = document.getElementById('lager-list');
@@ -746,40 +753,70 @@ function renderLager() {
     var items = db.lager[name];
     var itemKeys = Object.keys(items);
     var isCollapsed = db.collapsed[name] || false;
+    var sortMode = db.sortMode[name] || 'grp';
     var safeName = name.replace(/'/g, "\\'");
 
-    // Gruppieren
-    var gruppen = {};
-    itemKeys.forEach(function(k) {
-      var obj = items[k];
-      var g = (obj && obj.gruppe) ? obj.gruppe : 'Sonstiges';
-      var m = (obj && obj.menge !== undefined) ? obj.menge : obj;
-      if (!gruppen[g]) gruppen[g] = [];
-      gruppen[g].push({ name: k, menge: m });
-    });
+    // Sortieren
+    var sortedItems = [];
+    if (sortMode === 'abc') {
+      // Alphabetisch: alle Artikel A-Z
+      sortedItems = itemKeys.map(function(k) {
+        var obj = items[k];
+        return { name: k, menge: obj.menge || 0, gruppe: obj.gruppe || 'Sonstiges' };
+      }).sort(function(a, b) { return a.name.localeCompare(b.name); });
+    } else {
+      // Nach Gruppe, dann alphabetisch
+      var gruppen = {};
+      itemKeys.forEach(function(k) {
+        var obj = items[k];
+        var g = obj.gruppe || 'Sonstiges';
+        if (!gruppen[g]) gruppen[g] = [];
+        gruppen[g].push({ name: k, menge: obj.menge || 0, gruppe: g });
+      });
+      Object.keys(gruppen).sort().forEach(function(g) {
+        gruppen[g].sort(function(a, b) { return a.name.localeCompare(b.name); });
+        sortedItems = sortedItems.concat(gruppen[g]);
+      });
+    }
 
-    var gruppenKeys = Object.keys(gruppen).sort();
     var rows = '';
     if (!isCollapsed) {
-      if (!gruppenKeys.length) {
+      if (!sortedItems.length) {
         rows = '<div style="font-size:13px;color:var(--text3);padding:4px 0;">Leer</div>';
       } else {
-        gruppenKeys.forEach(function(g) {
-          rows += '<div class="gruppe-label">' + g + '</div>';
-          gruppen[g].forEach(function(item) {
+        if (sortMode === 'grp') {
+          // Gruppiert anzeigen
+          var gruppen2 = {};
+          sortedItems.forEach(function(item) {
+            var g = item.gruppe;
+            if (!gruppen2[g]) gruppen2[g] = [];
+            gruppen2[g].push(item);
+          });
+          Object.keys(gruppen2).sort().forEach(function(g) {
+            rows += '<div class="gruppe-label">' + g + '</div>';
+            gruppen2[g].forEach(function(item) {
+              var safeArtikel = item.name.replace(/'/g, "\\'");
+              rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + item.menge + 'x</span><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+            });
+          });
+        } else {
+          // Alphabetisch anzeigen (ohne Gruppenlabels)
+          sortedItems.forEach(function(item) {
             var safeArtikel = item.name.replace(/'/g, "\\'");
             rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + item.menge + 'x</span><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
           });
-        });
+        }
       }
     }
 
     var chevron = isCollapsed ? 'ti-chevron-down' : 'ti-chevron-up';
+    var sortBtn = sortMode === 'abc' ? 'ABC' : 'Grp';
     return '<div class="lager-card" draggable="true" data-name="' + name + '" ondragstart="dragStart(event)" ondragover="dragOver(event)" ondrop="dragDrop(event)" ondragend="dragEnd(event)">'
       + '<div class="lager-card-title">'
       + '<div style="display:flex;align-items:center;gap:8px;cursor:grab;color:var(--text3);"><i class="ti ti-grip-vertical" style="font-size:16px;"></i><span style="color:var(--text);cursor:pointer;" onclick="toggleCollapse(\'' + safeName + '\')">' + name + '</span></div>'
       + '<div style="display:flex;align-items:center;gap:8px;">'
       + '<span class="badge">' + itemKeys.length + ' Artikel</span>'
+      + '<button class="lager-delete-btn" onclick="toggleSort(\'' + safeName + '\')" style="font-size:13px;font-weight:600;color:var(--text3);padding:4px 8px;border:0.5px solid var(--border2);border-radius:4px;background:transparent;">' + sortBtn + '</button>'
       + '<button class="lager-delete-btn" onclick="toggleCollapse(\'' + safeName + '\')" style="font-size:16px;color:var(--text3);"><i class="ti ' + chevron + '"></i></button>'
       + '<button class="lager-delete-btn" onclick="askDeleteLager(\'' + safeName + '\')" aria-label="Lager löschen"><i class="ti ti-trash"></i></button>'
       + '</div></div>'
