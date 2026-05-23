@@ -277,7 +277,8 @@
         <b style="color:var(--text);">v16</b> Bugfix Bestandsabgleich &amp; Zonenzuordnung<br>
         <b style="color:var(--text);">v22</b> Artikel-Einheiten für Alkohol &amp; Softdrinks (erster Buchstabe)<br>
         <b style="color:var(--text);">v23</b> Scrollen &amp; Drag &amp; Drop per Long Press<br>
-        <b style="color:var(--text);">v24</b> Foto-Hinterlegung per Long Press (Kamera öffnet direkt bei neuem Artikel)
+        <b style="color:var(--text);">v27</b> Crop-Editor mit Cropper.js<br>
+        <b style="color:var(--text);">v28</b> Cloud-Sync über Cloudflare KV (automatisch + manuell per ↻)
       </div>
     </div>
   </div>
@@ -286,7 +287,7 @@
 <header>
   <div>
     <div class="app-name">Lagerfeld</div>
-    <div class="app-sub">Lagerverwaltung</div>
+    <div class="app-sub" id="sync-status">Verbinde…</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
     <button class="lager-delete-btn" onclick="exportExcel()" aria-label="Excel exportieren" style="font-size:40px;color:var(--text3);display:flex;align-items:center;line-height:1;">
@@ -301,6 +302,9 @@
     </label>
     <button id="settings-btn" onclick="showSetup()" aria-label="Einstellungen">
       <i class="ti ti-settings"></i>
+    </button>
+    <button class="lager-delete-btn" onclick="syncFromCloud()" aria-label="Jetzt synchronisieren" style="font-size:20px;color:var(--text3);">
+      <i class="ti ti-refresh"></i>
     </button>
   </div>
 </header>
@@ -789,10 +793,64 @@ var listening = false;
 var currentTab = 'sprache';
 var isProcessing = false;
 
+var syncTimeout = null;
+var lastSyncTime = 0;
+
+async function syncToCloud() {
+  try {
+    await fetch(PROXY_URL + 'sync/put', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(db)
+    });
+    lastSyncTime = Date.now();
+    updateSyncStatus('✓ Synchronisiert ' + new Date().toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'}));
+  } catch(e) {
+    updateSyncStatus('⚠ Sync fehlgeschlagen');
+  }
+}
+
+async function syncFromCloud() {
+  try {
+    updateSyncStatus('↓ Synchronisiere…');
+    var resp = await fetch(PROXY_URL + 'sync/get');
+    var data = await resp.json();
+    if (data && data.lager) {
+      db = data;
+      if (!db.mindest) db.mindest = {};
+      if (!db.lagerOrder) db.lagerOrder = [];
+      if (!db.collapsed) db.collapsed = {};
+      if (!db.sortMode) db.sortMode = {};
+      if (!db.einheiten) db.einheiten = {};
+      localStorage.setItem('lagerfeld_db2', JSON.stringify(db));
+      renderLager();
+      renderLog();
+      renderWarnungen();
+      updateWarnTab();
+      lastSyncTime = Date.now();
+      updateSyncStatus('✓ Synchronisiert ' + new Date().toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'}));
+    }
+  } catch(e) {
+    updateSyncStatus('⚠ Sync fehlgeschlagen');
+  }
+}
+
+function updateSyncStatus(text) {
+  var el = document.getElementById('sync-status');
+  if (el) el.textContent = text;
+}
+
+function scheduleSyncToCloud() {
+  clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(syncToCloud, 1500);
+}
+
 function saveDb() {
   try { localStorage.setItem('lagerfeld_db2', JSON.stringify(db)); } catch(e) {}
   updateWarnTab();
+  scheduleSyncToCloud();
 }
+
 function getApiKey() { return localStorage.getItem('lagerfeld_apikey') || ''; }
 function saveApiKey() {
   var key = document.getElementById('api-key-input').value.trim();
@@ -808,6 +866,10 @@ function showSetup() {
 window.addEventListener('load', function() {
   if (getApiKey()) document.getElementById('setup-screen').style.display = 'none';
   updateWarnTab();
+  // Beim Start einmalig aus Cloud laden
+  syncFromCloud();
+  // Alle 30 Sekunden aus Cloud laden (für iPad-Sync)
+  setInterval(syncFromCloud, 30000);
 });
 
 function showTab(tab) {
