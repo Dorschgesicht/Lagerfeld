@@ -440,6 +440,22 @@
   <div style="padding:10px;text-align:center;font-size:12px;color:var(--text3);flex-shrink:0;">Ausschnitt verschieben &amp; skalieren · Zwei Finger zum Zoomen</div>
 </div>
 
+<!-- Mindestbestand PopUp -->
+<div id="mindest-overlay" class="confirm-overlay" style="display:none;">
+  <div class="confirm-box" style="text-align:center;">
+    <div class="confirm-title">Mindestbestand</div>
+    <div class="confirm-sub" id="mindest-overlay-sub"></div>
+    <input type="number" id="mindest-overlay-input" min="0" step="1"
+      style="width:100%;font-size:22px;padding:10px 14px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:var(--surface);color:var(--text);text-align:center;margin-bottom:14px;outline:none;"
+      onkeydown="if(event.key==='Enter')confirmMindestOverlay()" />
+    <div class="confirm-btns">
+      <button class="confirm-btn cancel" onclick="closeMindestOverlay()">Abbrechen</button>
+      <button class="confirm-btn delete" onclick="deleteMindestOverlay()">Löschen</button>
+      <button class="confirm-btn save" style="background:var(--text);color:var(--bg);border:none;" onclick="confirmMindestOverlay()">Speichern</button>
+    </div>
+  </div>
+</div>
+
 <div id="confirm-overlay" class="confirm-overlay" style="display:none;">
   <div class="confirm-box">
     <div class="confirm-title" id="confirm-title">Lager löschen?</div>
@@ -805,6 +821,61 @@ function handleFotoChange(event) {
 
 var pendingRename = null; // { lager, altName }
 
+var mindestOverlayLager = null;
+var mindestOverlayArtikel = null;
+
+function openMindestOverlay(lagerName, artikelName) {
+  mindestOverlayLager = lagerName;
+  mindestOverlayArtikel = artikelName;
+  var zone = null;
+  for (var z in ZONEN) {
+    if (ZONEN[z].indexOf(lagerName) !== -1) { zone = z; break; }
+  }
+  if (!zone) zone = lagerName;
+  var aktuell = (db.mindest[zone] && db.mindest[zone][artikelName]) ? db.mindest[zone][artikelName] : '';
+  document.getElementById('mindest-overlay-sub').textContent = artikelName + ' · Zone: ' + zone;
+  document.getElementById('mindest-overlay-input').value = aktuell;
+  document.getElementById('mindest-overlay').style.display = 'flex';
+  setTimeout(function() { document.getElementById('mindest-overlay-input').focus(); }, 100);
+}
+
+function closeMindestOverlay() {
+  document.getElementById('mindest-overlay').style.display = 'none';
+  mindestOverlayLager = null;
+  mindestOverlayArtikel = null;
+}
+
+function confirmMindestOverlay() {
+  var val = parseInt(document.getElementById('mindest-overlay-input').value);
+  if (isNaN(val) || val < 0) { closeMindestOverlay(); return; }
+  var zone = null;
+  for (var z in ZONEN) {
+    if (ZONEN[z].indexOf(mindestOverlayLager) !== -1) { zone = z; break; }
+  }
+  if (!zone) zone = mindestOverlayLager;
+  if (!db.mindest[zone]) db.mindest[zone] = {};
+  db.mindest[zone][mindestOverlayArtikel] = val;
+  db.log.unshift({ zeit: new Date().toISOString(), text: 'Mindestbestand ' + mindestOverlayArtikel + ' (' + zone + '): ' + val });
+  if (db.log.length > 200) db.log = db.log.slice(0, 200);
+  saveDb();
+  renderWarnungen();
+  updateWarnTab();
+  closeMindestOverlay();
+}
+
+function deleteMindestOverlay() {
+  var zone = null;
+  for (var z in ZONEN) {
+    if (ZONEN[z].indexOf(mindestOverlayLager) !== -1) { zone = z; break; }
+  }
+  if (!zone) zone = mindestOverlayLager;
+  if (db.mindest[zone]) delete db.mindest[zone][mindestOverlayArtikel];
+  saveDb();
+  renderWarnungen();
+  updateWarnTab();
+  closeMindestOverlay();
+}
+
 function askRenameArtikel(lager, artName) {
   pendingRename = { lager: lager, altName: artName };
   document.getElementById('rename-sub').textContent = 'Neuer Name für „' + artName + '" in Lager „' + lager + '"';
@@ -1154,7 +1225,7 @@ function renderLager() {
               var einheit = getEinheit(item.name);
               var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
               var fotoIcon = getFoto(item.name) ? 'ti-photo-filled' : 'ti-photo';
-              rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+              rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="openMindestOverlay(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Mindestbestand" style="font-size:14px;color:var(--text3);"><i class="ti ti-bottle"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
             });
           });
         } else {
@@ -1164,7 +1235,7 @@ function renderLager() {
             var einheit = getEinheit(item.name);
             var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
             var fotoIcon = getFoto(item.name) ? 'ti-photo-filled' : 'ti-photo';
-            rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+            rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="openMindestOverlay(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Mindestbestand" style="font-size:14px;color:var(--text3);"><i class="ti ti-bottle"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
           });
         }
       }
