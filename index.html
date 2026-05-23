@@ -273,8 +273,9 @@
         <b style="color:var(--text);">v14</b> Fuzzy-Matching für Lagernamen per Levenshtein<br>
         <b style="color:var(--text);">v15</b> Warnungen-Tab &amp; Mindestbestände per Sprachbefehl<br>
         <b style="color:var(--text);">v16</b> Bugfix Bestandsabgleich &amp; Zonenzuordnung<br>
-        <b style="color:var(--text);">v17</b> Mindestbestand löschen per Button und Sprachbefehl<br>
-        <b style="color:var(--text);">v18</b> Versionshistorie im Einstellungen-Menü
+        <b style="color:var(--text);">v22</b> Artikel-Einheiten für Alkohol &amp; Softdrinks (erster Buchstabe)<br>
+        <b style="color:var(--text);">v23</b> Scrollen &amp; Drag &amp; Drop per Long Press<br>
+        <b style="color:var(--text);">v24</b> Foto-Hinterlegung per Long Press &amp; KI-Erkennung per Kamera
       </div>
     </div>
   </div>
@@ -286,7 +287,9 @@
     <div class="app-sub">Lagerverwaltung</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
-    <button class="lager-delete-btn" onclick="exportExcel()" aria-label="Excel exportieren" style="font-size:40px;color:var(--text3);display:flex;align-items:center;line-height:1;">
+    <button class="lager-delete-btn" onclick="openKameraOverlay()" aria-label="Artikel per Foto erkennen" style="font-size:40px;color:var(--text3);display:flex;align-items:center;line-height:1;">
+      <i class="ti ti-camera"></i>
+    </button>
       <i class="ti ti-table"></i><i class="ti ti-arrow-up" style="font-size:20px;margin-left:-4px;margin-bottom:14px;"></i>
     </button>
     <button class="lager-delete-btn" onclick="exportBackup()" aria-label="Backup exportieren" style="font-size:40px;color:var(--text3);display:flex;align-items:center;line-height:1;">
@@ -355,7 +358,33 @@
   </div>
 </main>
 
-<!-- Confirm delete overlay -->
+<!-- Foto PopUp -->
+<div id="foto-overlay" class="confirm-overlay" style="display:none;">
+  <div class="confirm-box" style="text-align:center;">
+    <div class="confirm-title" id="foto-overlay-title">Foto</div>
+    <img id="foto-overlay-img" src="" style="width:100%;border-radius:var(--radius-sm);margin:12px 0;max-height:300px;object-fit:contain;" />
+    <div class="confirm-btns">
+      <button class="confirm-btn cancel" onclick="closeFotoOverlay()">Schließen</button>
+      <button class="confirm-btn" id="foto-change-btn" style="background:var(--surface2);color:var(--text);border-color:var(--border2);" onclick="changeFoto()">Ändern</button>
+      <button class="confirm-btn delete" onclick="doDeleteFoto()">Löschen</button>
+    </div>
+    <input type="file" id="foto-change-input" accept="image/*" capture="environment" style="display:none;" onchange="handleFotoChange(event)">
+  </div>
+</div>
+
+<!-- Kamera für neue Artikel per Foto -->
+<div id="kamera-overlay" class="confirm-overlay" style="display:none;">
+  <div class="confirm-box" style="text-align:center;">
+    <div class="confirm-title">Artikel per Foto erkennen</div>
+    <div class="confirm-sub" style="margin-bottom:12px;">Mache ein Foto des Flaschenlabels – die KI erkennt den Artikel automatisch.</div>
+    <input type="file" id="kamera-input" accept="image/*" capture="environment" style="display:none;" onchange="handleKameraFoto(event)">
+    <div style="display:flex;gap:10px;flex-direction:column;">
+      <button class="confirm-btn save" onclick="document.getElementById('kamera-input').click()" style="background:var(--text);color:var(--bg);border:none;">📷 Foto aufnehmen</button>
+      <button class="confirm-btn cancel" onclick="closeKameraOverlay()">Abbrechen</button>
+    </div>
+    <div id="kamera-status" style="font-size:13px;color:var(--text2);margin-top:10px;"></div>
+  </div>
+</div>
 <div id="confirm-overlay" class="confirm-overlay" style="display:none;">
   <div class="confirm-box">
     <div class="confirm-title" id="confirm-title">Lager löschen?</div>
@@ -391,7 +420,59 @@ if (!db.mindest) db.mindest = {};
 if (!db.lagerOrder) db.lagerOrder = [];
 if (!db.collapsed) db.collapsed = {};
 if (!db.sortMode) db.sortMode = {};
-if (!db.einheiten) db.einheiten = {}; // { "artikelName": "F" } – global pro Artikel, erster Buchstabe
+if (!db.einheiten) db.einheiten = {};
+// Fotos werden separat gespeichert (nicht in lagerfeld_db2) wegen Größe
+var fotoDB = JSON.parse(localStorage.getItem('lagerfeld_fotos') || '{}'); // { "artikelName": "data:image/jpeg;base64,..." }
+
+function saveFotoDB() {
+  try { localStorage.setItem('lagerfeld_fotos', JSON.stringify(fotoDB)); } catch(e) {
+    alert('Speicher voll – bitte einige Fotos löschen.');
+  }
+}
+
+function getFoto(artikelName) {
+  return fotoDB[artikelName] || null;
+}
+
+function saveFoto(artikelName, dataUrl) {
+  fotoDB[artikelName] = dataUrl;
+  saveFotoDB();
+}
+
+function deleteFoto(artikelName) {
+  delete fotoDB[artikelName];
+  saveFotoDB();
+}
+
+function compressImage(file, callback) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var img = new Image();
+    img.onload = function() {
+      var canvas = document.createElement('canvas');
+      var max = 200;
+      var w = img.width, h = img.height;
+      if (w > h) { if (w > max) { h = h * max / w; w = max; } }
+      else { if (h > max) { w = w * max / h; h = max; } }
+      canvas.width = w; canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      callback(canvas.toDataURL('image/jpeg', 0.6));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Speicherwarnung
+function checkStorageUsage() {
+  try {
+    var total = 0;
+    for (var k in localStorage) { if (localStorage.hasOwnProperty(k)) total += localStorage[k].length * 2; }
+    var pct = total / (5 * 1024 * 1024) * 100;
+    if (pct > 80) alert('Speicher zu ' + Math.round(pct) + '% voll. Bitte einige Fotos löschen.');
+  } catch(e) {}
+}
 
 function getEinheit(artikelName) {
   return db.einheiten[artikelName] || '';
@@ -580,6 +661,137 @@ function deleteMindest(zone, artikel) {
 }
 
 var recognition = null;
+// Long press für Artikel-Foto
+var longPressArtikel = null;
+var longPressArtikelTimer = null;
+function startLongPress(artikelName, e) {
+  longPressArtikel = artikelName;
+  longPressArtikelTimer = setTimeout(function() {
+    openFotoOverlay(artikelName);
+  }, 600);
+}
+function cancelLongPress() {
+  clearTimeout(longPressArtikelTimer);
+  longPressArtikel = null;
+}
+
+// Foto PopUp
+var currentFotoArtikel = null;
+function openFotoOverlay(artikelName) {
+  currentFotoArtikel = artikelName;
+  document.getElementById('foto-overlay-title').textContent = artikelName;
+  var foto = getFoto(artikelName);
+  if (foto) {
+    document.getElementById('foto-overlay-img').src = foto;
+    document.getElementById('foto-overlay-img').style.display = '';
+  } else {
+    document.getElementById('foto-overlay-img').style.display = 'none';
+    // Kein Foto – direkt Kamera öffnen
+    document.getElementById('foto-overlay').style.display = 'none';
+    document.getElementById('foto-change-input').dataset.artikel = artikelName;
+    document.getElementById('foto-change-input').click();
+    return;
+  }
+  document.getElementById('foto-change-input').dataset.artikel = artikelName;
+  document.getElementById('foto-overlay').style.display = 'flex';
+}
+function closeFotoOverlay() {
+  document.getElementById('foto-overlay').style.display = 'none';
+  currentFotoArtikel = null;
+}
+function changeFoto() {
+  document.getElementById('foto-change-input').click();
+}
+function doDeleteFoto() {
+  if (currentFotoArtikel) {
+    deleteFoto(currentFotoArtikel);
+    closeFotoOverlay();
+    renderLager();
+  }
+}
+function handleFotoChange(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var artikelName = event.target.dataset.artikel || currentFotoArtikel;
+  compressImage(file, function(dataUrl) {
+    saveFoto(artikelName, dataUrl);
+    checkStorageUsage();
+    closeFotoOverlay();
+    renderLager();
+  });
+  event.target.value = '';
+}
+
+// Kamera-Overlay für neue Artikel per Foto
+function openKameraOverlay() {
+  document.getElementById('kamera-overlay').style.display = 'flex';
+  document.getElementById('kamera-status').textContent = '';
+}
+function closeKameraOverlay() {
+  document.getElementById('kamera-overlay').style.display = 'none';
+  document.getElementById('kamera-status').textContent = '';
+}
+async function handleKameraFoto(event) {
+  var file = event.target.files[0];
+  if (!file) return;
+  var status = document.getElementById('kamera-status');
+  status.textContent = 'KI erkennt die Flasche…';
+
+  var reader = new FileReader();
+  reader.onload = async function(e) {
+    var base64 = e.target.result.split(',')[1];
+    var apiKey = getApiKey();
+    try {
+      var resp = await fetch(PROXY_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: 500,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } },
+              { type: 'text', text: 'Erkenne diese Alkoholflasche. Antworte NUR mit einem JSON-Objekt: {"name": "Produktname", "einheit": "Flaschen", "erkannt": true}. Falls du keine Flasche erkennst: {"erkannt": false}. Kein Markdown, keine Backticks.' }
+            ]
+          }]
+        })
+      });
+      var data = await resp.json();
+      var raw = (data.content || []).map(function(b) { return b.text || ''; }).join('');
+      var parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
+
+      if (!parsed.erkannt) {
+        status.textContent = 'Keine Flasche erkannt. Bitte nochmal versuchen.';
+        return;
+      }
+
+      var artikelName = parsed.name;
+      var einheit = parsed.einheit || 'Flaschen';
+
+      // Foto komprimiert speichern
+      compressImage(file, function(dataUrl) {
+        saveFoto(artikelName, dataUrl);
+        checkStorageUsage();
+      });
+
+      // Einheit setzen falls noch nicht vorhanden
+      if (!db.einheiten[artikelName]) setEinheit(artikelName, einheit);
+
+      status.textContent = '✓ Erkannt: ' + artikelName + '. In welchem Lager soll er angelegt werden?';
+      document.getElementById('text-input').value = 'Füge 1 ' + artikelName + ' als Alkohol hinzu in ';
+      closeKameraOverlay();
+      showTab('sprache');
+      document.getElementById('text-input').focus();
+
+    } catch(err) {
+      status.textContent = 'Fehler: ' + err.message;
+    }
+  };
+  reader.readAsDataURL(file);
+  event.target.value = '';
+}
+
 var pendingRename = null; // { lager, altName }
 
 function askRenameArtikel(lager, artName) {
@@ -814,7 +1026,8 @@ function renderLager() {
               var safeArtikel = item.name.replace(/'/g, "\\'");
               var einheit = getEinheit(item.name);
               var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
-              rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+              var hasFoto = getFoto(item.name) ? 'style="text-decoration:underline dotted;"' : '';
+              rows += '<div class="item-row" oncontextmenu="openFotoOverlay(\'' + safeArtikel + '\');return false;" ontouchstart="startLongPress(\'' + safeArtikel + '\',event)" ontouchend="cancelLongPress()" ontouchmove="cancelLongPress()"><span class="item-name" ' + hasFoto + '>' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
             });
           });
         } else {
@@ -823,7 +1036,8 @@ function renderLager() {
             var safeArtikel = item.name.replace(/'/g, "\\'");
             var einheit = getEinheit(item.name);
             var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
-            rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+            var hasFoto = getFoto(item.name) ? 'style="text-decoration:underline dotted;"' : '';
+            rows += '<div class="item-row" oncontextmenu="openFotoOverlay(\'' + safeArtikel + '\');return false;" ontouchstart="startLongPress(\'' + safeArtikel + '\',event)" ontouchend="cancelLongPress()" ontouchmove="cancelLongPress()"><span class="item-name" ' + hasFoto + '>' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
           });
         }
       }
