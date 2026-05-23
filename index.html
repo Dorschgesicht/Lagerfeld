@@ -470,6 +470,17 @@
   </div>
 </div>
 
+<!-- Generischer Bestätigungsdialog -->
+<div id="generic-confirm-overlay" class="confirm-overlay" style="display:none;">
+  <div class="confirm-box" style="text-align:center;">
+    <div class="confirm-title" id="generic-confirm-title"></div>
+    <div class="confirm-btns" style="margin-top:18px;">
+      <button class="confirm-btn cancel" onclick="closeGenericConfirm()">Abbrechen</button>
+      <button class="confirm-btn save" id="generic-confirm-ok" style="background:var(--text);color:var(--bg);border:none;" onclick="doGenericConfirm()">OK</button>
+    </div>
+  </div>
+</div>
+
 <!-- Rename article overlay -->
 <div id="rename-overlay" class="confirm-overlay" style="display:none;">
   <div class="confirm-box">
@@ -596,6 +607,21 @@ function askDeleteLager(name) {
     ? 'Das Lager enthält noch ' + count + ' Artikel. Alle Daten gehen verloren.'
     : 'Das Lager ist leer. Dieser Schritt kann nicht rückgängig gemacht werden.';
   document.getElementById('confirm-overlay').style.display = 'flex';
+}
+
+var genericConfirmCallback = null;
+function showConfirm(message, callback) {
+  genericConfirmCallback = callback;
+  document.getElementById('generic-confirm-title').textContent = message;
+  document.getElementById('generic-confirm-overlay').style.display = 'flex';
+}
+function doGenericConfirm() {
+  document.getElementById('generic-confirm-overlay').style.display = 'none';
+  if (genericConfirmCallback) { genericConfirmCallback(); genericConfirmCallback = null; }
+}
+function closeGenericConfirm() {
+  document.getElementById('generic-confirm-overlay').style.display = 'none';
+  genericConfirmCallback = null;
 }
 
 function closeConfirm() {
@@ -1131,11 +1157,18 @@ function leerEntnehmen(artikelName) {
   var lager = db.lager[currentLeerLager];
   if (!lager || !lager[artikelName]) return;
   if (lager[artikelName].menge <= 0) return;
-  lager[artikelName].menge -= 1;
-  db.log.unshift({ zeit: new Date().toISOString(), text: '−1 ' + artikelName + ' aus ' + currentLeerLager });
-  if (db.log.length > 200) db.log = db.log.slice(0, 200);
-  saveDb();
-  renderLeer();
+  var einheit = getEinheit(artikelName);
+  var mengeAnzeige = einheit ? '1 ' + einheit : '1x';
+  showConfirm(
+    mengeAnzeige + ' ' + artikelName + ' wurde verbraucht',
+    function() {
+      lager[artikelName].menge -= 1;
+      db.log.unshift({ zeit: new Date().toISOString(), text: '−1 ' + artikelName + ' aus ' + currentLeerLager });
+      if (db.log.length > 200) db.log = db.log.slice(0, 200);
+      saveDb();
+      renderLeer();
+    }
+  );
 }
 
 function getZoneMenge(zone, artikel) {
