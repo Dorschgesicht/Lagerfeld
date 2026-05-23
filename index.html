@@ -380,9 +380,18 @@
     </div>
     <div style="flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#000;">
       <canvas id="crop-canvas" style="max-width:100%;max-height:100%;touch-action:none;"></canvas>
-      <div id="crop-frame" style="position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);touch-action:none;"></div>
+      <div id="crop-frame" style="position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);touch-action:none;">
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;left:-11px;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;left:calc(50% - 11px);"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;right:-11px;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:calc(50% - 11px);right:-11px;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;right:-11px;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;left:calc(50% - 11px);"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;left:-11px;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:calc(50% - 11px);left:-11px;"></div>
+      </div>
     </div>
-    <div style="padding:10px;text-align:center;font-size:12px;color:var(--text3);">Rahmen verschieben &amp; skalieren</div>
+    <div style="padding:10px;text-align:center;font-size:12px;color:var(--text3);">Rahmen verschieben · Ecken &amp; Seiten zum Skalieren ziehen</div>
   </div>
 </div>
 
@@ -665,15 +674,14 @@ var recognition = null;
 // Crop Editor
 var cropImg = null;
 var cropArtikel = null;
-var cropFile = null;
-var cropFrame = { x: 0, y: 0, size: 0 };
+var cropFrame = { x: 0, y: 0, w: 0, h: 0 };
 var canvasRect = null;
-var dragMode = null; // 'move' or 'resize'
+var dragMode = null;
 var dragStart = null;
+var HANDLE_SIZE = 22;
 
 function openCropOverlay(file, artikelName) {
   cropArtikel = artikelName;
-  cropFile = file;
   var reader = new FileReader();
   reader.onload = function(e) {
     cropImg = new Image();
@@ -686,13 +694,13 @@ function openCropOverlay(file, artikelName) {
       canvas.height = Math.round(cropImg.height * scale);
       var ctx = canvas.getContext('2d');
       ctx.drawImage(cropImg, 0, 0, canvas.width, canvas.height);
-
-      // Initial crop frame: centered square, 70% of shorter side
-      var sz = Math.round(Math.min(canvas.width, canvas.height) * 0.7);
+      // Initial: 80% des Bildes
+      var pw = Math.round(canvas.width * 0.8);
+      var ph = Math.round(canvas.height * 0.8);
       cropFrame = {
-        x: Math.round((canvas.width - sz) / 2),
-        y: Math.round((canvas.height - sz) / 2),
-        size: sz
+        x: Math.round((canvas.width - pw) / 2),
+        y: Math.round((canvas.height - ph) / 2),
+        w: pw, h: ph
       };
       updateCropFrame();
       document.getElementById('crop-overlay').style.display = 'flex';
@@ -708,57 +716,85 @@ function updateCropFrame() {
   var frame = document.getElementById('crop-frame');
   frame.style.left = (canvasRect.left + cropFrame.x) + 'px';
   frame.style.top = (canvasRect.top + cropFrame.y) + 'px';
-  frame.style.width = cropFrame.size + 'px';
-  frame.style.height = cropFrame.size + 'px';
+  frame.style.width = cropFrame.w + 'px';
+  frame.style.height = cropFrame.h + 'px';
 }
 
 function clampFrame() {
   var canvas = document.getElementById('crop-canvas');
-  cropFrame.size = Math.max(40, Math.min(cropFrame.size, canvas.width, canvas.height));
-  cropFrame.x = Math.max(0, Math.min(cropFrame.x, canvas.width - cropFrame.size));
-  cropFrame.y = Math.max(0, Math.min(cropFrame.y, canvas.height - cropFrame.size));
+  cropFrame.w = Math.max(40, Math.min(cropFrame.w, canvas.width));
+  cropFrame.h = Math.max(40, Math.min(cropFrame.h, canvas.height));
+  cropFrame.x = Math.max(0, Math.min(cropFrame.x, canvas.width - cropFrame.w));
+  cropFrame.y = Math.max(0, Math.min(cropFrame.y, canvas.height - cropFrame.h));
 }
 
-// Touch events on crop frame
+function getHandleAt(tx, ty) {
+  var canvas = document.getElementById('crop-canvas');
+  canvasRect = canvas.getBoundingClientRect();
+  var fx = canvasRect.left + cropFrame.x;
+  var fy = canvasRect.top + cropFrame.y;
+  var fw = cropFrame.w, fh = cropFrame.h;
+  var H = HANDLE_SIZE;
+  var handles = [
+    { name: 'nw', x: fx,        y: fy },
+    { name: 'n',  x: fx+fw/2,   y: fy },
+    { name: 'ne', x: fx+fw,     y: fy },
+    { name: 'e',  x: fx+fw,     y: fy+fh/2 },
+    { name: 'se', x: fx+fw,     y: fy+fh },
+    { name: 's',  x: fx+fw/2,   y: fy+fh },
+    { name: 'sw', x: fx,        y: fy+fh },
+    { name: 'w',  x: fx,        y: fy+fh/2 },
+  ];
+  for (var i = 0; i < handles.length; i++) {
+    if (Math.abs(tx - handles[i].x) < H && Math.abs(ty - handles[i].y) < H) return handles[i].name;
+  }
+  // Mitte = move
+  if (tx > fx && tx < fx+fw && ty > fy && ty < fy+fh) return 'move';
+  return null;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
   var frame = document.getElementById('crop-frame');
 
   frame.addEventListener('touchstart', function(e) {
     e.preventDefault();
-    canvasRect = document.getElementById('crop-canvas').getBoundingClientRect();
     var t = e.touches[0];
-    var fx = canvasRect.left + cropFrame.x;
-    var fy = canvasRect.top + cropFrame.y;
-    var fw = cropFrame.size;
-    // Bottom-right 30px = resize handle
-    var inResize = t.clientX > fx + fw - 30 && t.clientY > fy + fw - 30;
-    dragMode = inResize ? 'resize' : 'move';
+    dragMode = getHandleAt(t.clientX, t.clientY);
     dragStart = { x: t.clientX, y: t.clientY, frame: Object.assign({}, cropFrame) };
   }, { passive: false });
 
   frame.addEventListener('touchmove', function(e) {
     e.preventDefault();
-    if (!dragStart) return;
+    if (!dragStart || !dragMode) return;
     var t = e.touches[0];
     var dx = t.clientX - dragStart.x;
     var dy = t.clientY - dragStart.y;
+    var f = dragStart.frame;
     if (dragMode === 'move') {
-      cropFrame.x = dragStart.frame.x + dx;
-      cropFrame.y = dragStart.frame.y + dy;
+      cropFrame.x = f.x + dx;
+      cropFrame.y = f.y + dy;
+      cropFrame.w = f.w;
+      cropFrame.h = f.h;
     } else {
-      var delta = Math.max(dx, dy);
-      cropFrame.size = dragStart.frame.size + delta;
+      if (dragMode === 'nw') { cropFrame.x = f.x+dx; cropFrame.y = f.y+dy; cropFrame.w = f.w-dx; cropFrame.h = f.h-dy; }
+      if (dragMode === 'n')  { cropFrame.y = f.y+dy; cropFrame.h = f.h-dy; }
+      if (dragMode === 'ne') { cropFrame.y = f.y+dy; cropFrame.w = f.w+dx; cropFrame.h = f.h-dy; }
+      if (dragMode === 'e')  { cropFrame.w = f.w+dx; }
+      if (dragMode === 'se') { cropFrame.w = f.w+dx; cropFrame.h = f.h+dy; }
+      if (dragMode === 's')  { cropFrame.h = f.h+dy; }
+      if (dragMode === 'sw') { cropFrame.x = f.x+dx; cropFrame.w = f.w-dx; cropFrame.h = f.h+dy; }
+      if (dragMode === 'w')  { cropFrame.x = f.x+dx; cropFrame.w = f.w-dx; }
     }
     clampFrame();
     updateCropFrame();
   }, { passive: false });
 
-  frame.addEventListener('touchend', function() { dragStart = null; });
+  frame.addEventListener('touchend', function() { dragStart = null; dragMode = null; });
 });
 
 function closeCropOverlay() {
   document.getElementById('crop-overlay').style.display = 'none';
-  cropImg = null; cropArtikel = null; cropFile = null;
+  cropImg = null; cropArtikel = null;
 }
 
 function confirmCrop() {
@@ -766,15 +802,19 @@ function confirmCrop() {
   var scaleX = cropImg.naturalWidth / canvas.width;
   var scaleY = cropImg.naturalHeight / canvas.height;
   var out = document.createElement('canvas');
-  out.width = 200; out.height = 200;
+  // Max 400px auf längerer Seite, Seitenverhältnis beibehalten
+  var maxPx = 400;
+  var ratio = cropFrame.w / cropFrame.h;
+  if (ratio >= 1) { out.width = maxPx; out.height = Math.round(maxPx / ratio); }
+  else { out.height = maxPx; out.width = Math.round(maxPx * ratio); }
   var ctx = out.getContext('2d');
   ctx.drawImage(
     cropImg,
     cropFrame.x * scaleX, cropFrame.y * scaleY,
-    cropFrame.size * scaleX, cropFrame.size * scaleY,
-    0, 0, 200, 200
+    cropFrame.w * scaleX, cropFrame.h * scaleY,
+    0, 0, out.width, out.height
   );
-  var dataUrl = out.toDataURL('image/jpeg', 0.6);
+  var dataUrl = out.toDataURL('image/jpeg', 0.65);
   saveFoto(cropArtikel, dataUrl);
   checkStorageUsage();
   closeCropOverlay();
