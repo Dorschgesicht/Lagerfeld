@@ -853,6 +853,8 @@ function toggleCollapse(name) {
 var dragSrc = null;
 var touchStartY = 0;
 var draggedElement = null;
+var longPressTimer = null;
+var isDragging = false;
 
 function dragStart(e) {
   dragSrc = e.currentTarget.dataset.name;
@@ -861,14 +863,25 @@ function dragStart(e) {
 }
 
 function touchStart(e) {
-  dragSrc = e.currentTarget.dataset.name;
-  draggedElement = e.currentTarget;
+  var card = e.currentTarget;
   touchStartY = e.touches[0].clientY;
-  e.currentTarget.style.opacity = '0.5';
+  isDragging = false;
+  // Long press nach 500ms aktiviert Drag
+  longPressTimer = setTimeout(function() {
+    isDragging = true;
+    dragSrc = card.dataset.name;
+    draggedElement = card;
+    card.style.opacity = '0.5';
+    card.style.boxShadow = '0 4px 16px rgba(0,0,0,0.18)';
+  }, 500);
 }
 
 function touchMove(e) {
-  if (!draggedElement) return;
+  if (!isDragging) {
+    // Kein Drag aktiv – normales Scrollen erlauben
+    clearTimeout(longPressTimer);
+    return;
+  }
   e.preventDefault();
   var touch = e.touches[0];
   var allCards = document.querySelectorAll('.lager-card');
@@ -882,8 +895,15 @@ function touchMove(e) {
 }
 
 function touchEnd(e) {
-  if (!draggedElement) return;
-  e.currentTarget.style.opacity = '';
+  clearTimeout(longPressTimer);
+  if (!isDragging || !draggedElement) {
+    isDragging = false;
+    dragSrc = null;
+    draggedElement = null;
+    return;
+  }
+  draggedElement.style.opacity = '';
+  draggedElement.style.boxShadow = '';
   var touch = e.changedTouches[0];
   var allCards = document.querySelectorAll('.lager-card');
   allCards.forEach(function(card) {
@@ -902,12 +922,14 @@ function touchEnd(e) {
     }
     card.style.borderTop = '';
   });
+  isDragging = false;
   dragSrc = null;
   draggedElement = null;
 }
 
 function dragEnd(e) {
   e.currentTarget.style.opacity = '';
+  e.currentTarget.style.boxShadow = '';
   document.querySelectorAll('.lager-card').forEach(function(c) { c.style.borderTop = ''; });
 }
 function dragOver(e) {
