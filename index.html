@@ -218,6 +218,16 @@
     text-transform: uppercase; color: var(--text3);
     padding: 8px 0 4px; margin-top: 4px;
   }
+  .angebot-card {
+    border: 0.5px solid var(--border2); border-radius: var(--radius-sm);
+    padding: 12px; margin-bottom: 10px; background: var(--surface);
+  }
+  .angebot-card-head {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  }
+  .angebot-artikel { font-size: 15px; font-weight: 600; color: var(--text); }
+  .angebot-detail { font-size: 13px; color: var(--text2); margin-top: 4px; line-height: 1.5; }
+  .angebot-haendler { display: inline-block; font-size: 11px; font-weight: 600; color: var(--bg); background: var(--text2); padding: 2px 8px; border-radius: 10px; margin-top: 6px; }
   .leer-lager-btn {
     flex: 1; padding: 12px; border-radius: var(--radius-sm);
     border: 1.5px solid var(--border2); background: var(--surface2);
@@ -317,8 +327,12 @@
         <b style="color:var(--text);">v22</b> Artikel-Einheiten für Alkohol &amp; Softdrinks (erster Buchstabe)<br>
         <b style="color:var(--text);">v23</b> Scrollen &amp; Drag &amp; Drop per Long Press<br>
         <b style="color:var(--text);">v27</b> Crop-Editor mit Cropper.js<br>
-        <b style="color:var(--text);">v28</b> Cloud-Sync über Cloudflare KV (automatisch + manuell per ↻)<br>
-        <b style="color:var(--text);">v29</b> Tab „Leer" für schnelle Entnahmen + automatische iPad-Skalierung
+        <b style="color:var(--text);">v28</b> Cloud-Sync über Cloudflare KV (automatisch)<br>
+        <b style="color:var(--text);">v29</b> Tab „Leer" für schnelle Entnahmen + automatische iPad-Skalierung<br>
+        <b style="color:var(--text);">v30</b> Mindestbestand direkt am Artikel (🍾-Icon)<br>
+        <b style="color:var(--text);">v31</b> Warnungen 4 Wochen zurückstellen (Snooze)<br>
+        <b style="color:var(--text);">v32</b> Tab „Verbrauch" mit KI-Analyse (nur Rapa Bar)<br>
+        <b style="color:var(--text);">v33</b> Tab „Angebote" – Prospektsuche mit Bestandsabgleich
       </div>
     </div>
   </div>
@@ -354,6 +368,7 @@
   <button class="tab" id="tab-btn-warnungen" onclick="showTab('warnungen')">Warnungen</button>
   <button class="tab" onclick="showTab('leer')">Leer</button>
   <button class="tab" onclick="showTab('verbrauch')">Verbrauch</button>
+  <button class="tab" onclick="showTab('angebote')">Angebote</button>
   <button class="tab" onclick="showTab('verlauf')">Verlauf</button>
 </div>
 
@@ -431,6 +446,18 @@
           <i class="ti ti-microphone" id="verbrauch-mic-icon"></i>
         </button>
       </div>
+    </div>
+  </div>
+
+  <div id="tab-angebote" style="display:none;">
+    <button onclick="sucheAngebote()" id="angebote-such-btn"
+      style="width:100%;padding:14px;border-radius:var(--radius-sm);background:var(--text);color:var(--bg);border:none;font-size:15px;font-weight:600;margin-bottom:16px;">
+      <i class="ti ti-search"></i> Angebote suchen
+    </button>
+    <div id="angebote-status" style="font-size:13px;color:var(--text2);margin-bottom:12px;text-align:center;"></div>
+    <div id="angebote-list"></div>
+    <div id="angebote-empty" class="empty-state" style="display:none;">
+      <i class="ti ti-tag"></i>Noch keine Angebote gefunden. Tippe auf „Angebote suchen".
     </div>
   </div>
 </main>
@@ -519,7 +546,7 @@ var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
 // DB-Struktur:
 // db.lager[lagerName][artikelName] = { menge: N, gruppe: "Werkzeug" }
 // Migration: Falls alter Eintrag noch eine Zahl ist, konvertieren
-var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {}, einheiten: {}, snooze: {}, leerFavoriten: [], collapsedGruppen: {}, collapsedLeer: {}, verbrauch: [] };
+var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {}, einheiten: {}, snooze: {}, leerFavoriten: [], collapsedGruppen: {}, collapsedLeer: {}, verbrauch: [], angebote: [] };
 if (!db.mindest) db.mindest = {};
 if (!db.lagerOrder) db.lagerOrder = [];
 if (!db.collapsed) db.collapsed = {};
@@ -530,6 +557,7 @@ if (!db.leerFavoriten) db.leerFavoriten = [];
 if (!db.collapsedGruppen) db.collapsedGruppen = {};
 if (!db.collapsedLeer) db.collapsedLeer = {};
 if (!db.verbrauch) db.verbrauch = [];
+if (!db.angebote) db.angebote = [];
 // Fotos werden separat gespeichert (nicht in lagerfeld_db2) wegen Größe
 var fotoDB = JSON.parse(localStorage.getItem('lagerfeld_fotos') || '{}'); // { "artikelName": "data:image/jpeg;base64,..." }
 
@@ -873,6 +901,118 @@ async function sendVerbrauchFrage() {
   }
 }
 
+// ═══ Angebote Tab ═══
+function getRelevanteArtikel() {
+  // Artikel deren Gesamtbestand < 2x Mindestbestand
+  var relevant = [];
+  Object.keys(db.mindest).forEach(function(zone) {
+    Object.keys(db.mindest[zone]).forEach(function(art) {
+      var min = db.mindest[zone][art];
+      var ist = getZoneMenge(zone, art);
+      if (ist < 2 * min) {
+        relevant.push({ artikel: art, zone: zone, ist: ist, min: min });
+      }
+    });
+  });
+  return relevant;
+}
+
+function renderAngebote() {
+  var list = document.getElementById('angebote-list');
+  var empty = document.getElementById('angebote-empty');
+  if (!db.angebote || !db.angebote.length) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = db.angebote.map(function(a, idx) {
+    var safeIdx = idx;
+    return '<div class="angebot-card">'
+      + '<div class="angebot-card-head">'
+      + '<div style="flex:1;">'
+      + '<div class="angebot-artikel">' + (a.artikel || '') + '</div>'
+      + '<div class="angebot-detail">' + (a.angebot || '') + (a.preis ? ' · <b>' + a.preis + '</b>' : '') + '</div>'
+      + (a.gueltig ? '<div class="angebot-detail" style="font-size:11px;color:var(--text3);">gültig: ' + a.gueltig + '</div>' : '')
+      + '<span class="angebot-haendler">' + (a.haendler || '') + '</span>'
+      + '</div>'
+      + '<button class="lager-delete-btn" onclick="askDeleteAngebot(' + safeIdx + ')" aria-label="Entfernen" style="font-size:18px;color:var(--text3);"><i class="ti ti-trash"></i></button>'
+      + '</div>'
+      + '</div>';
+  }).join('');
+}
+
+function askDeleteAngebot(idx) {
+  var a = db.angebote[idx];
+  if (!a) return;
+  showConfirm('Angebot „' + a.artikel + '" bei ' + a.haendler + ' entfernen?', function() {
+    db.angebote.splice(idx, 1);
+    saveDb();
+    renderAngebote();
+  });
+}
+
+async function sucheAngebote() {
+  var status = document.getElementById('angebote-status');
+  var btn = document.getElementById('angebote-such-btn');
+  var apiKey = getApiKey();
+  if (!apiKey) { status.textContent = 'Bitte erst API-Schlüssel in den Einstellungen eintragen.'; return; }
+
+  var relevant = getRelevanteArtikel();
+  if (!relevant.length) {
+    status.textContent = 'Keine Artikel unter dem doppelten Mindestbestand – keine Suche nötig.';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  status.textContent = 'Durchsuche Prospekte von Edeka, Netto, Lidl, Aldi, Rewe und famila…';
+
+  var artikelNamen = relevant.map(function(r) { return r.artikel; });
+
+  try {
+    var resp = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 2000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{
+          role: 'user',
+          content: 'Suche aktuelle Prospekt-Angebote der kommenden Woche bei diesen Ketten: Edeka, Netto, Lidl, Aldi, Rewe, famila.\n\n'
+            + 'Ich suche gezielt nach Angeboten für folgende Produkte (oder sehr ähnliche):\n'
+            + artikelNamen.join(', ') + '\n\n'
+            + 'Gib mir NUR Treffer, die wirklich zu einem dieser Produkte passen. Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
+            + '[{"artikel":"mein Produktname","haendler":"Kette","angebot":"Produktbeschreibung im Prospekt","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
+            + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.'
+        }]
+      })
+    });
+    var data = await resp.json();
+    var text = (data.content || []).map(function(b) { return b.text || ''; }).join('\n');
+
+    // JSON-Array aus der Antwort extrahieren
+    var match = text.match(/\[[\s\S]*\]/);
+    if (match) {
+      var gefunden = JSON.parse(match[0]);
+      db.angebote = gefunden;
+      saveDb();
+      renderAngebote();
+      status.textContent = gefunden.length
+        ? '✓ ' + gefunden.length + ' Angebot(e) gefunden.'
+        : 'Keine passenden Angebote in den aktuellen Prospekten gefunden.';
+    } else {
+      status.textContent = 'Keine Angebote gefunden.';
+    }
+  } catch(e) {
+    status.textContent = 'Fehler bei der Suche: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+  }
+}
+
 var recognition = null;
 // Crop Editor mit Cropper.js
 var cropperInstance = null;
@@ -1157,7 +1297,7 @@ var currentLeerLager = 'Hinten';
 
 function showTab(tab) {
   currentTab = tab;
-  ['sprache','lager','warnungen','leer','verbrauch','verlauf'].forEach(function(t, i) {
+  ['sprache','lager','warnungen','leer','verbrauch','angebote','verlauf'].forEach(function(t, i) {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
     document.querySelectorAll('.tab')[i].classList.toggle('active', t === tab);
   });
@@ -1166,6 +1306,7 @@ function showTab(tab) {
   if (tab === 'warnungen') renderWarnungen();
   if (tab === 'leer') renderLeer();
   if (tab === 'verbrauch') renderVerbrauch();
+  if (tab === 'angebote') renderAngebote();
 }
 
 function setLeerLager(name) {
