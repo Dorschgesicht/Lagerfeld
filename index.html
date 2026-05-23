@@ -798,23 +798,32 @@ var lastSyncTime = 0;
 
 async function syncToCloud() {
   try {
-    await fetch(PROXY_URL + 'sync/put', {
+    updateSyncStatus('↑ Speichere…');
+    var resp = await fetch(PROXY_URL + 'sync/put', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(db)
     });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
     lastSyncTime = Date.now();
     updateSyncStatus('✓ Synchronisiert ' + new Date().toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'}));
   } catch(e) {
-    updateSyncStatus('⚠ Sync fehlgeschlagen');
+    updateSyncStatus('⚠ Sync fehlgeschlagen: ' + e.message);
   }
 }
 
 async function syncFromCloud() {
   try {
     updateSyncStatus('↓ Synchronisiere…');
-    var resp = await fetch(PROXY_URL + 'sync/get');
-    var data = await resp.json();
+    var resp = await fetch(PROXY_URL + 'sync/get', { method: 'GET' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    var text = await resp.text();
+    if (!text || text === 'null') {
+      updateSyncStatus('Cloud leer – lokale Daten werden hochgeladen');
+      syncToCloud();
+      return;
+    }
+    var data = JSON.parse(text);
     if (data && data.lager) {
       db = data;
       if (!db.mindest) db.mindest = {};
@@ -829,9 +838,12 @@ async function syncFromCloud() {
       updateWarnTab();
       lastSyncTime = Date.now();
       updateSyncStatus('✓ Synchronisiert ' + new Date().toLocaleTimeString('de-DE', {hour:'2-digit',minute:'2-digit'}));
+    } else {
+      updateSyncStatus('Cloud leer – lokale Daten werden hochgeladen');
+      syncToCloud();
     }
   } catch(e) {
-    updateSyncStatus('⚠ Sync fehlgeschlagen');
+    updateSyncStatus('⚠ Fehler: ' + e.message);
   }
 }
 
