@@ -489,12 +489,13 @@ var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
 // DB-Struktur:
 // db.lager[lagerName][artikelName] = { menge: N, gruppe: "Werkzeug" }
 // Migration: Falls alter Eintrag noch eine Zahl ist, konvertieren
-var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {} };
+var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {}, einheiten: {}, snooze: {} };
 if (!db.mindest) db.mindest = {};
 if (!db.lagerOrder) db.lagerOrder = [];
 if (!db.collapsed) db.collapsed = {};
 if (!db.sortMode) db.sortMode = {};
 if (!db.einheiten) db.einheiten = {};
+if (!db.snooze) db.snooze = {};
 // Fotos werden separat gespeichert (nicht in lagerfeld_db2) wegen Größe
 var fotoDB = JSON.parse(localStorage.getItem('lagerfeld_fotos') || '{}'); // { "artikelName": "data:image/jpeg;base64,..." }
 
@@ -1111,6 +1112,28 @@ function updateWarnTab() {
   else { btn.classList.remove('warn'); btn.textContent = 'Warnungen'; }
 }
 
+function getSnoozedUntil(zone, art) {
+  if (!db.snooze) return null;
+  var key = zone + '::' + art;
+  return db.snooze[key] || null;
+}
+
+function snoozeWarnung(zone, art) {
+  if (!db.snooze) db.snooze = {};
+  var key = zone + '::' + art;
+  var until = Date.now() + 28 * 24 * 60 * 60 * 1000; // 4 Wochen
+  db.snooze[key] = until;
+  saveDb();
+  renderWarnungen();
+  updateWarnTab();
+}
+
+function isSnoozeActive(zone, art) {
+  var until = getSnoozedUntil(zone, art);
+  if (!until) return false;
+  return Date.now() < until;
+}
+
 function renderWarnungen() {
   var list = document.getElementById('warn-list');
   var mindestList = document.getElementById('mindest-list');
@@ -1127,11 +1150,18 @@ function renderWarnungen() {
       var min = db.mindest[zone][art];
       var ist = getZoneMenge(zone, art);
       if (ist < min) {
+        // Snooze prüfen
+        if (isSnoozeActive(zone, art)) return;
         anyWarn = true;
         var einheit = getEinheit(art);
         var istAnzeige = einheit ? ist + ' ' + einheit : ist + 'x';
         var minAnzeige = einheit ? min + ' ' + einheit : min + 'x';
-        rows += '<div class="warn-row"><span class="warn-artikel">' + art + '</span><span class="warn-menge">⚠️ Ist: ' + istAnzeige + ' / Min: ' + minAnzeige + '</span></div>';
+        var safeZone = zone.replace(/'/g, "\\'");
+        var safeArt = art.replace(/'/g, "\\'");
+        var snoozeBtn = min <= 2
+          ? '<button class="lager-delete-btn" onclick="snoozeWarnung(\'' + safeZone + '\',\'' + safeArt + '\')" title="4 Wochen zurückstellen" style="font-size:16px;color:var(--text3);"><i class="ti ti-zzz"></i></button>'
+          : '';
+        rows += '<div class="warn-row"><span class="warn-artikel">' + art + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="warn-menge">' + istAnzeige + ' / ' + minAnzeige + '</span>' + snoozeBtn + '</div></div>';
       }
     });
     if (rows) {
@@ -1143,7 +1173,7 @@ function renderWarnungen() {
   }
   list.innerHTML = warnHtml;
 
-  // Mindestbestände Übersicht – alle Einträge inkl. unbekannte Zonen
+  // Mindestbestände Übersicht
   var allMindest = [];
   Object.keys(db.mindest).forEach(function(zone) {
     Object.keys(db.mindest[zone]).forEach(function(art) {
@@ -1162,8 +1192,10 @@ function renderWarnungen() {
       var minAnzeige = einheit ? m.min + ' ' + einheit : m.min + 'x';
       var safeZone = m.zone.replace(/'/g, "\\'");
       var safeArt = m.artikel.replace(/'/g, "\\'");
+      var snoozed = isSnoozeActive(m.zone, m.artikel);
+      var snoozeHinweis = snoozed ? ' <span style="font-size:10px;color:var(--text3);">💤</span>' : '';
       return '<div class="mindest-row">'
-        + '<span style="color:var(--text2);">' + m.artikel + '<br><span style="font-size:11px;color:var(--text3);">' + m.zone + '</span></span>'
+        + '<span style="color:var(--text2);">' + m.artikel + snoozeHinweis + '<br><span style="font-size:11px;color:var(--text3);">' + m.zone + '</span></span>'
         + '<div style="display:flex;align-items:center;gap:10px;">'
         + '<span style="color:' + farbe + ';font-weight:500;">' + istAnzeige + ' / ' + minAnzeige + '</span>'
         + '<button class="lager-delete-btn" onclick="deleteMindest(\'' + safeZone + '\',\'' + safeArt + '\')" aria-label="Löschen" style="font-size:16px;color:var(--text3);"><i class="ti ti-trash"></i></button>'
