@@ -381,14 +381,14 @@
     <div style="flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#000;">
       <canvas id="crop-canvas" style="max-width:100%;max-height:100%;touch-action:none;"></canvas>
       <div id="crop-frame" style="position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);touch-action:none;">
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;left:-11px;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;left:calc(50% - 11px);"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;right:-11px;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:calc(50% - 11px);right:-11px;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;right:-11px;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;left:calc(50% - 11px);"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;left:-11px;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:calc(50% - 11px);left:-11px;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;left:-11px;pointer-events:none;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;left:calc(50% - 11px);pointer-events:none;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;right:-11px;pointer-events:none;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:calc(50% - 11px);right:-11px;pointer-events:none;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;right:-11px;pointer-events:none;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;left:calc(50% - 11px);pointer-events:none;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;left:-11px;pointer-events:none;"></div>
+        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:calc(50% - 11px);left:-11px;pointer-events:none;"></div>
       </div>
     </div>
     <div style="padding:10px;text-align:center;font-size:12px;color:var(--text3);">Rahmen verschieben · Ecken &amp; Seiten zum Skalieren ziehen</div>
@@ -754,18 +754,21 @@ function getHandleAt(tx, ty) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  var frame = document.getElementById('crop-frame');
+  var overlay = document.getElementById('crop-overlay');
 
-  frame.addEventListener('touchstart', function(e) {
-    e.preventDefault();
+  overlay.addEventListener('touchstart', function(e) {
+    if (document.getElementById('crop-overlay').style.display === 'none') return;
     var t = e.touches[0];
-    dragMode = getHandleAt(t.clientX, t.clientY);
+    var mode = getHandleAt(t.clientX, t.clientY);
+    if (!mode) return;
+    e.preventDefault();
+    dragMode = mode;
     dragStart = { x: t.clientX, y: t.clientY, frame: Object.assign({}, cropFrame) };
   }, { passive: false });
 
-  frame.addEventListener('touchmove', function(e) {
-    e.preventDefault();
+  overlay.addEventListener('touchmove', function(e) {
     if (!dragStart || !dragMode) return;
+    e.preventDefault();
     var t = e.touches[0];
     var dx = t.clientX - dragStart.x;
     var dy = t.clientY - dragStart.y;
@@ -776,6 +779,8 @@ document.addEventListener('DOMContentLoaded', function() {
       cropFrame.w = f.w;
       cropFrame.h = f.h;
     } else {
+      cropFrame.x = f.x; cropFrame.y = f.y;
+      cropFrame.w = f.w; cropFrame.h = f.h;
       if (dragMode === 'nw') { cropFrame.x = f.x+dx; cropFrame.y = f.y+dy; cropFrame.w = f.w-dx; cropFrame.h = f.h-dy; }
       if (dragMode === 'n')  { cropFrame.y = f.y+dy; cropFrame.h = f.h-dy; }
       if (dragMode === 'ne') { cropFrame.y = f.y+dy; cropFrame.w = f.w+dx; cropFrame.h = f.h-dy; }
@@ -789,7 +794,7 @@ document.addEventListener('DOMContentLoaded', function() {
     updateCropFrame();
   }, { passive: false });
 
-  frame.addEventListener('touchend', function() { dragStart = null; dragMode = null; });
+  overlay.addEventListener('touchend', function() { dragStart = null; dragMode = null; });
 });
 
 function closeCropOverlay() {
