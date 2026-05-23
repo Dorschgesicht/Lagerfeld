@@ -646,20 +646,6 @@ function deleteMindest(zone, artikel) {
 }
 
 var recognition = null;
-// Long press für Artikel-Foto
-var longPressArtikel = null;
-var longPressArtikelTimer = null;
-function startLongPress(artikelName, e) {
-  longPressArtikel = artikelName;
-  longPressArtikelTimer = setTimeout(function() {
-    openFotoOverlay(artikelName);
-  }, 600);
-}
-function cancelLongPress() {
-  clearTimeout(longPressArtikelTimer);
-  longPressArtikel = null;
-}
-
 // Foto PopUp
 var currentFotoArtikel = null;
 function openFotoOverlay(artikelName) {
@@ -941,8 +927,8 @@ function renderLager() {
               var safeArtikel = item.name.replace(/'/g, "\\'");
               var einheit = getEinheit(item.name);
               var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
-              var hasFoto = getFoto(item.name) ? 'style="text-decoration:underline dotted;"' : '';
-              rows += '<div class="item-row" oncontextmenu="openFotoOverlay(\'' + safeArtikel + '\');return false;" ontouchstart="startLongPress(\'' + safeArtikel + '\',event)" ontouchend="cancelLongPress()" ontouchmove="cancelLongPress()"><span class="item-name" ' + hasFoto + '>' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+              var fotoIcon = getFoto(item.name) ? 'ti-photo-filled' : 'ti-photo';
+              rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
             });
           });
         } else {
@@ -951,8 +937,8 @@ function renderLager() {
             var safeArtikel = item.name.replace(/'/g, "\\'");
             var einheit = getEinheit(item.name);
             var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
-            var hasFoto = getFoto(item.name) ? 'style="text-decoration:underline dotted;"' : '';
-            rows += '<div class="item-row" oncontextmenu="openFotoOverlay(\'' + safeArtikel + '\');return false;" ontouchstart="startLongPress(\'' + safeArtikel + '\',event)" ontouchend="cancelLongPress()" ontouchmove="cancelLongPress()"><span class="item-name" ' + hasFoto + '>' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+            var fotoIcon = getFoto(item.name) ? 'ti-photo-filled' : 'ti-photo';
+            rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
           });
         }
       }
