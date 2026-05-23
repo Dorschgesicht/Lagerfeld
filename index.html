@@ -489,13 +489,15 @@ var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
 // DB-Struktur:
 // db.lager[lagerName][artikelName] = { menge: N, gruppe: "Werkzeug" }
 // Migration: Falls alter Eintrag noch eine Zahl ist, konvertieren
-var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {}, einheiten: {}, snooze: {} };
+var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {}, einheiten: {}, snooze: {}, leerFavoriten: [], collapsedGruppen: {} };
 if (!db.mindest) db.mindest = {};
 if (!db.lagerOrder) db.lagerOrder = [];
 if (!db.collapsed) db.collapsed = {};
 if (!db.sortMode) db.sortMode = {};
 if (!db.einheiten) db.einheiten = {};
 if (!db.snooze) db.snooze = {};
+if (!db.leerFavoriten) db.leerFavoriten = [];
+if (!db.collapsedGruppen) db.collapsedGruppen = {};
 // Fotos werden separat gespeichert (nicht in lagerfeld_db2) wegen Größe
 var fotoDB = JSON.parse(localStorage.getItem('lagerfeld_fotos') || '{}'); // { "artikelName": "data:image/jpeg;base64,..." }
 
@@ -1036,24 +1038,44 @@ function setLeerLager(name) {
   renderLeer();
 }
 
+function toggleLeerFavorit(artikelName) {
+  if (!db.leerFavoriten) db.leerFavoriten = [];
+  var idx = db.leerFavoriten.indexOf(artikelName);
+  if (idx === -1) db.leerFavoriten.push(artikelName);
+  else db.leerFavoriten.splice(idx, 1);
+  saveDb();
+  renderLeer();
+}
+
 function renderLeer() {
+  if (!db.leerFavoriten) db.leerFavoriten = [];
   var lager = db.lager[currentLeerLager] || {};
   var artikel = Object.keys(lager).filter(function(a) { return lager[a].menge > 0; });
   artikel.sort(function(a, b) { return a.localeCompare(b, 'de'); });
+
+  // Favoriten oben, Rest danach – beide alphabetisch
+  var favoriten = artikel.filter(function(a) { return db.leerFavoriten.indexOf(a) !== -1; });
+  var rest = artikel.filter(function(a) { return db.leerFavoriten.indexOf(a) === -1; });
+  var sortiert = favoriten.concat(rest);
+
   var list = document.getElementById('leer-list');
   var empty = document.getElementById('leer-empty');
-  if (artikel.length === 0) {
+  if (sortiert.length === 0) {
     list.innerHTML = '';
     empty.style.display = '';
     return;
   }
   empty.style.display = 'none';
-  list.innerHTML = artikel.map(function(a) {
+  list.innerHTML = sortiert.map(function(a) {
     var einheit = getEinheit(a);
     var menge = lager[a].menge;
     var mengeAnzeige = einheit ? menge + ' ' + einheit : menge + 'x';
     var safe = a.replace(/'/g, "\\'");
+    var isFav = db.leerFavoriten.indexOf(a) !== -1;
+    var starIcon = isFav ? 'ti-star-filled' : 'ti-star';
+    var starColor = isFav ? 'color:var(--yellow, #f5a623);' : 'color:var(--text3);';
     return '<div class="leer-item-row">' +
+      '<button class="lager-delete-btn" onclick="toggleLeerFavorit(\'' + safe + '\')" style="font-size:20px;' + starColor + 'margin-right:6px;flex-shrink:0;"><i class="ti ' + starIcon + '"></i></button>' +
       '<span class="leer-item-name">' + a + '</span>' +
       '<span class="leer-item-menge">' + mengeAnzeige + '</span>' +
       '<button class="leer-minus-btn" onclick="leerEntnehmen(\'' + safe + '\')">−</button>' +
@@ -1204,6 +1226,14 @@ function renderWarnungen() {
   }
 }
 
+function toggleGruppe(lagerName, gruppeName) {
+  if (!db.collapsedGruppen) db.collapsedGruppen = {};
+  var key = lagerName + '::' + gruppeName;
+  db.collapsedGruppen[key] = !db.collapsedGruppen[key];
+  saveDb();
+  renderLager();
+}
+
 function toggleSort(name) {
   db.sortMode[name] = db.sortMode[name] === 'abc' ? 'grp' : 'abc';
   saveDb();
@@ -1261,14 +1291,23 @@ function renderLager() {
             gruppen2[g].push(item);
           });
           Object.keys(gruppen2).sort().forEach(function(g) {
-            rows += '<div class="gruppe-label">' + g + '</div>';
-            gruppen2[g].forEach(function(item) {
-              var safeArtikel = item.name.replace(/'/g, "\\'");
-              var einheit = getEinheit(item.name);
-              var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
-              var fotoIcon = getFoto(item.name) ? 'ti-photo-filled' : 'ti-photo';
-              rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="openMindestOverlay(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Mindestbestand" style="font-size:14px;color:var(--text3);"><i class="ti ti-bottle"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
-            });
+            var gruppeKey = name + '::' + g;
+            var gruppeCollapsed = db.collapsedGruppen && db.collapsedGruppen[gruppeKey];
+            var chevronG = gruppeCollapsed ? 'ti-chevron-down' : 'ti-chevron-up';
+            var safeG = g.replace(/'/g, "\\'");
+            rows += '<div class="gruppe-label" onclick="toggleGruppe(\'' + safeName + '\',\'' + safeG + '\')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+              + '<span>' + g + '</span>'
+              + '<i class="ti ' + chevronG + '" style="font-size:12px;color:var(--text3);"></i>'
+              + '</div>';
+            if (!gruppeCollapsed) {
+              gruppen2[g].forEach(function(item) {
+                var safeArtikel = item.name.replace(/'/g, "\\'");
+                var einheit = getEinheit(item.name);
+                var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
+                var fotoIcon = getFoto(item.name) ? 'ti-photo-filled' : 'ti-photo';
+                rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="openMindestOverlay(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Mindestbestand" style="font-size:14px;color:var(--text3);"><i class="ti ti-bottle"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+              });
+            }
           });
         } else {
           // Alphabetisch anzeigen (ohne Gruppenlabels)
