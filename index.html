@@ -1104,7 +1104,7 @@ function updateWarnTab() {
     Object.keys(db.mindest[zone]).forEach(function(artikel) {
       var min = db.mindest[zone][artikel];
       var ist = getZoneMenge(zone, artikel);
-      if (ist < min) hasWarn = true;
+      if (ist < min && !isSnoozeActive(zone, artikel)) hasWarn = true;
     });
   });
   var btn = document.getElementById('tab-btn-warnungen');
