@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-title" content="Lagerfeld">
 <title>Lagerfeld</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css">
+<script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
 <style>
   :root {
     --bg: #f5f4f0;
@@ -370,29 +372,17 @@
   </div>
 </div>
 
-<!-- Crop Editor -->
-<div id="crop-overlay" class="confirm-overlay" style="display:none;align-items:stretch;padding:0;">
-  <div style="background:var(--bg);width:100%;display:flex;flex-direction:column;height:100%;">
-    <div style="padding:14px 20px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
-      <button class="confirm-btn cancel" style="flex:none;width:auto;padding:8px 14px;" onclick="closeCropOverlay()">Abbrechen</button>
-      <span style="font-size:15px;font-weight:600;">Foto zuschneiden</span>
-      <button class="confirm-btn save" style="flex:none;width:auto;padding:8px 14px;background:var(--text);color:var(--bg);border:none;" onclick="confirmCrop()">Speichern</button>
-    </div>
-    <div style="flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#000;">
-      <canvas id="crop-canvas" style="max-width:100%;max-height:100%;touch-action:none;"></canvas>
-      <div id="crop-frame" style="position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);touch-action:none;">
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;left:-11px;pointer-events:none;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;left:calc(50% - 11px);pointer-events:none;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:-11px;right:-11px;pointer-events:none;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:calc(50% - 11px);right:-11px;pointer-events:none;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;right:-11px;pointer-events:none;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;left:calc(50% - 11px);pointer-events:none;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;bottom:-11px;left:-11px;pointer-events:none;"></div>
-        <div style="position:absolute;width:22px;height:22px;background:#fff;border-radius:50%;top:calc(50% - 11px);left:-11px;pointer-events:none;"></div>
-      </div>
-    </div>
-    <div style="padding:10px;text-align:center;font-size:12px;color:var(--text3);">Rahmen verschieben · Ecken &amp; Seiten zum Skalieren ziehen</div>
+<!-- Crop Editor mit Cropper.js -->
+<div id="crop-overlay" style="display:none;position:fixed;inset:0;z-index:200;background:var(--bg);flex-direction:column;">
+  <div style="padding:14px 20px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <button class="confirm-btn cancel" style="flex:none;width:auto;padding:8px 14px;" onclick="closeCropOverlay()">Abbrechen</button>
+    <span style="font-size:15px;font-weight:600;">Foto zuschneiden</span>
+    <button class="confirm-btn save" style="flex:none;width:auto;padding:8px 14px;background:var(--text);color:var(--bg);border:none;" onclick="confirmCrop()">Speichern</button>
   </div>
+  <div style="flex:1;overflow:hidden;background:#000;">
+    <img id="crop-image" style="max-width:100%;display:block;" />
+  </div>
+  <div style="padding:10px;text-align:center;font-size:12px;color:var(--text3);flex-shrink:0;">Ausschnitt verschieben &amp; skalieren · Zwei Finger zum Zoomen</div>
 </div>
 
 <div id="confirm-overlay" class="confirm-overlay" style="display:none;">
@@ -671,155 +661,43 @@ function deleteMindest(zone, artikel) {
 }
 
 var recognition = null;
-// Crop Editor
-var cropImg = null;
+// Crop Editor mit Cropper.js
+var cropperInstance = null;
 var cropArtikel = null;
-var cropFrame = { x: 0, y: 0, w: 0, h: 0 };
-var canvasRect = null;
-var dragMode = null;
-var dragStart = null;
-var HANDLE_SIZE = 22;
 
 function openCropOverlay(file, artikelName) {
   cropArtikel = artikelName;
   var reader = new FileReader();
   reader.onload = function(e) {
-    cropImg = new Image();
-    cropImg.onload = function() {
-      var canvas = document.getElementById('crop-canvas');
-      var maxW = window.innerWidth;
-      var maxH = window.innerHeight * 0.65;
-      var scale = Math.min(maxW / cropImg.width, maxH / cropImg.height, 1);
-      canvas.width = Math.round(cropImg.width * scale);
-      canvas.height = Math.round(cropImg.height * scale);
-      var ctx = canvas.getContext('2d');
-      ctx.drawImage(cropImg, 0, 0, canvas.width, canvas.height);
-      // Initial: 80% des Bildes
-      var pw = Math.round(canvas.width * 0.8);
-      var ph = Math.round(canvas.height * 0.8);
-      cropFrame = {
-        x: Math.round((canvas.width - pw) / 2),
-        y: Math.round((canvas.height - ph) / 2),
-        w: pw, h: ph
-      };
-      updateCropFrame();
-      document.getElementById('crop-overlay').style.display = 'flex';
-    };
-    cropImg.src = e.target.result;
+    var img = document.getElementById('crop-image');
+    img.src = e.target.result;
+    document.getElementById('crop-overlay').style.display = 'flex';
+    // Cropper initialisieren
+    if (cropperInstance) { cropperInstance.destroy(); cropperInstance = null; }
+    cropperInstance = new Cropper(img, {
+      viewMode: 1,
+      autoCropArea: 0.8,
+      movable: true,
+      zoomable: true,
+      rotatable: false,
+      scalable: false,
+      responsive: true,
+      checkCrossOrigin: false
+    });
   };
   reader.readAsDataURL(file);
 }
 
-function updateCropFrame() {
-  var canvas = document.getElementById('crop-canvas');
-  canvasRect = canvas.getBoundingClientRect();
-  var frame = document.getElementById('crop-frame');
-  frame.style.left = (canvasRect.left + cropFrame.x) + 'px';
-  frame.style.top = (canvasRect.top + cropFrame.y) + 'px';
-  frame.style.width = cropFrame.w + 'px';
-  frame.style.height = cropFrame.h + 'px';
-}
-
-function clampFrame() {
-  var canvas = document.getElementById('crop-canvas');
-  cropFrame.w = Math.max(40, Math.min(cropFrame.w, canvas.width));
-  cropFrame.h = Math.max(40, Math.min(cropFrame.h, canvas.height));
-  cropFrame.x = Math.max(0, Math.min(cropFrame.x, canvas.width - cropFrame.w));
-  cropFrame.y = Math.max(0, Math.min(cropFrame.y, canvas.height - cropFrame.h));
-}
-
-function getHandleAt(tx, ty) {
-  var canvas = document.getElementById('crop-canvas');
-  canvasRect = canvas.getBoundingClientRect();
-  var fx = canvasRect.left + cropFrame.x;
-  var fy = canvasRect.top + cropFrame.y;
-  var fw = cropFrame.w, fh = cropFrame.h;
-  var H = HANDLE_SIZE;
-  var handles = [
-    { name: 'nw', x: fx,        y: fy },
-    { name: 'n',  x: fx+fw/2,   y: fy },
-    { name: 'ne', x: fx+fw,     y: fy },
-    { name: 'e',  x: fx+fw,     y: fy+fh/2 },
-    { name: 'se', x: fx+fw,     y: fy+fh },
-    { name: 's',  x: fx+fw/2,   y: fy+fh },
-    { name: 'sw', x: fx,        y: fy+fh },
-    { name: 'w',  x: fx,        y: fy+fh/2 },
-  ];
-  for (var i = 0; i < handles.length; i++) {
-    if (Math.abs(tx - handles[i].x) < H && Math.abs(ty - handles[i].y) < H) return handles[i].name;
-  }
-  // Mitte = move
-  if (tx > fx && tx < fx+fw && ty > fy && ty < fy+fh) return 'move';
-  return null;
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-  var overlay = document.getElementById('crop-overlay');
-
-  overlay.addEventListener('touchstart', function(e) {
-    if (document.getElementById('crop-overlay').style.display === 'none') return;
-    var t = e.touches[0];
-    var mode = getHandleAt(t.clientX, t.clientY);
-    if (!mode) return;
-    e.preventDefault();
-    dragMode = mode;
-    dragStart = { x: t.clientX, y: t.clientY, frame: Object.assign({}, cropFrame) };
-  }, { passive: false });
-
-  overlay.addEventListener('touchmove', function(e) {
-    if (!dragStart || !dragMode) return;
-    e.preventDefault();
-    var t = e.touches[0];
-    var dx = t.clientX - dragStart.x;
-    var dy = t.clientY - dragStart.y;
-    var f = dragStart.frame;
-    if (dragMode === 'move') {
-      cropFrame.x = f.x + dx;
-      cropFrame.y = f.y + dy;
-      cropFrame.w = f.w;
-      cropFrame.h = f.h;
-    } else {
-      cropFrame.x = f.x; cropFrame.y = f.y;
-      cropFrame.w = f.w; cropFrame.h = f.h;
-      if (dragMode === 'nw') { cropFrame.x = f.x+dx; cropFrame.y = f.y+dy; cropFrame.w = f.w-dx; cropFrame.h = f.h-dy; }
-      if (dragMode === 'n')  { cropFrame.y = f.y+dy; cropFrame.h = f.h-dy; }
-      if (dragMode === 'ne') { cropFrame.y = f.y+dy; cropFrame.w = f.w+dx; cropFrame.h = f.h-dy; }
-      if (dragMode === 'e')  { cropFrame.w = f.w+dx; }
-      if (dragMode === 'se') { cropFrame.w = f.w+dx; cropFrame.h = f.h+dy; }
-      if (dragMode === 's')  { cropFrame.h = f.h+dy; }
-      if (dragMode === 'sw') { cropFrame.x = f.x+dx; cropFrame.w = f.w-dx; cropFrame.h = f.h+dy; }
-      if (dragMode === 'w')  { cropFrame.x = f.x+dx; cropFrame.w = f.w-dx; }
-    }
-    clampFrame();
-    updateCropFrame();
-  }, { passive: false });
-
-  overlay.addEventListener('touchend', function() { dragStart = null; dragMode = null; });
-});
-
 function closeCropOverlay() {
   document.getElementById('crop-overlay').style.display = 'none';
-  cropImg = null; cropArtikel = null;
+  if (cropperInstance) { cropperInstance.destroy(); cropperInstance = null; }
+  cropArtikel = null;
 }
 
 function confirmCrop() {
-  var canvas = document.getElementById('crop-canvas');
-  var scaleX = cropImg.naturalWidth / canvas.width;
-  var scaleY = cropImg.naturalHeight / canvas.height;
-  var out = document.createElement('canvas');
-  // Max 400px auf längerer Seite, Seitenverhältnis beibehalten
-  var maxPx = 400;
-  var ratio = cropFrame.w / cropFrame.h;
-  if (ratio >= 1) { out.width = maxPx; out.height = Math.round(maxPx / ratio); }
-  else { out.height = maxPx; out.width = Math.round(maxPx * ratio); }
-  var ctx = out.getContext('2d');
-  ctx.drawImage(
-    cropImg,
-    cropFrame.x * scaleX, cropFrame.y * scaleY,
-    cropFrame.w * scaleX, cropFrame.h * scaleY,
-    0, 0, out.width, out.height
-  );
-  var dataUrl = out.toDataURL('image/jpeg', 0.65);
+  if (!cropperInstance) return;
+  var canvas = cropperInstance.getCroppedCanvas({ maxWidth: 400, maxHeight: 400 });
+  var dataUrl = canvas.toDataURL('image/jpeg', 0.65);
   saveFoto(cropArtikel, dataUrl);
   checkStorageUsage();
   closeCropOverlay();
