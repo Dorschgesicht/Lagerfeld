@@ -489,7 +489,7 @@ var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
 // DB-Struktur:
 // db.lager[lagerName][artikelName] = { menge: N, gruppe: "Werkzeug" }
 // Migration: Falls alter Eintrag noch eine Zahl ist, konvertieren
-var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {}, einheiten: {}, snooze: {}, leerFavoriten: [], collapsedGruppen: {} };
+var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {}, einheiten: {}, snooze: {}, leerFavoriten: [], collapsedGruppen: {}, collapsedLeer: {} };
 if (!db.mindest) db.mindest = {};
 if (!db.lagerOrder) db.lagerOrder = [];
 if (!db.collapsed) db.collapsed = {};
@@ -498,6 +498,7 @@ if (!db.einheiten) db.einheiten = {};
 if (!db.snooze) db.snooze = {};
 if (!db.leerFavoriten) db.leerFavoriten = [];
 if (!db.collapsedGruppen) db.collapsedGruppen = {};
+if (!db.collapsedLeer) db.collapsedLeer = {};
 // Fotos werden separat gespeichert (nicht in lagerfeld_db2) wegen Größe
 var fotoDB = JSON.parse(localStorage.getItem('lagerfeld_fotos') || '{}'); // { "artikelName": "data:image/jpeg;base64,..." }
 
@@ -1038,6 +1039,13 @@ function setLeerLager(name) {
   renderLeer();
 }
 
+function toggleLeerGruppe(key) {
+  if (!db.collapsedLeer) db.collapsedLeer = {};
+  db.collapsedLeer[key] = !db.collapsedLeer[key];
+  saveDb();
+  renderLeer();
+}
+
 function toggleLeerFavorit(artikelName) {
   if (!db.leerFavoriten) db.leerFavoriten = [];
   var idx = db.leerFavoriten.indexOf(artikelName);
@@ -1049,38 +1057,74 @@ function toggleLeerFavorit(artikelName) {
 
 function renderLeer() {
   if (!db.leerFavoriten) db.leerFavoriten = [];
+  if (!db.collapsedLeer) db.collapsedLeer = {};
   var lager = db.lager[currentLeerLager] || {};
   var artikel = Object.keys(lager).filter(function(a) { return lager[a].menge > 0; });
   artikel.sort(function(a, b) { return a.localeCompare(b, 'de'); });
 
-  // Favoriten oben, Rest danach – beide alphabetisch
-  var favoriten = artikel.filter(function(a) { return db.leerFavoriten.indexOf(a) !== -1; });
-  var rest = artikel.filter(function(a) { return db.leerFavoriten.indexOf(a) === -1; });
-  var sortiert = favoriten.concat(rest);
-
   var list = document.getElementById('leer-list');
   var empty = document.getElementById('leer-empty');
-  if (sortiert.length === 0) {
+  if (artikel.length === 0) {
     list.innerHTML = '';
     empty.style.display = '';
     return;
   }
   empty.style.display = 'none';
-  list.innerHTML = sortiert.map(function(a) {
+
+  function renderArtikelRow(a) {
     var einheit = getEinheit(a);
     var menge = lager[a].menge;
     var mengeAnzeige = einheit ? menge + ' ' + einheit : menge + 'x';
     var safe = a.replace(/'/g, "\\'");
     var isFav = db.leerFavoriten.indexOf(a) !== -1;
     var starIcon = isFav ? 'ti-star-filled' : 'ti-star';
-    var starColor = isFav ? 'color:var(--yellow, #f5a623);' : 'color:var(--text3);';
-    return '<div class="leer-item-row">' +
-      '<button class="lager-delete-btn" onclick="toggleLeerFavorit(\'' + safe + '\')" style="font-size:20px;' + starColor + 'margin-right:6px;flex-shrink:0;"><i class="ti ' + starIcon + '"></i></button>' +
-      '<span class="leer-item-name">' + a + '</span>' +
-      '<span class="leer-item-menge">' + mengeAnzeige + '</span>' +
-      '<button class="leer-minus-btn" onclick="leerEntnehmen(\'' + safe + '\')">−</button>' +
-    '</div>';
-  }).join('');
+    var starColor = isFav ? 'color:#f5a623;' : 'color:var(--text3);';
+    return '<div class="leer-item-row">'
+      + '<button class="lager-delete-btn" onclick="toggleLeerFavorit(\'' + safe + '\')" style="font-size:20px;' + starColor + 'margin-right:6px;flex-shrink:0;"><i class="ti ' + starIcon + '"></i></button>'
+      + '<span class="leer-item-name">' + a + '</span>'
+      + '<span class="leer-item-menge">' + mengeAnzeige + '</span>'
+      + '<button class="leer-minus-btn" onclick="leerEntnehmen(\'' + safe + '\')">−</button>'
+      + '</div>';
+  }
+
+  function renderSectionHeader(key, label) {
+    var collapsed = db.collapsedLeer[key];
+    var chevron = collapsed ? 'ti-chevron-down' : 'ti-chevron-up';
+    return '<div class="gruppe-label" onclick="toggleLeerGruppe(\'' + key + '\')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+      + '<span>' + label + '</span>'
+      + '<i class="ti ' + chevron + '" style="font-size:12px;color:var(--text3);"></i>'
+      + '</div>';
+  }
+
+  var html = '';
+
+  // Favoriten-Sektion
+  var favoriten = artikel.filter(function(a) { return db.leerFavoriten.indexOf(a) !== -1; });
+  if (favoriten.length > 0) {
+    var favKey = currentLeerLager + '::__favoriten__';
+    html += renderSectionHeader(favKey, '★ Favoriten');
+    if (!db.collapsedLeer[favKey]) {
+      favoriten.forEach(function(a) { html += renderArtikelRow(a); });
+    }
+  }
+
+  // Restliche Artikel nach Gruppe
+  var rest = artikel.filter(function(a) { return db.leerFavoriten.indexOf(a) === -1; });
+  var gruppen = {};
+  rest.forEach(function(a) {
+    var g = (lager[a].gruppe) || 'Sonstiges';
+    if (!gruppen[g]) gruppen[g] = [];
+    gruppen[g].push(a);
+  });
+  Object.keys(gruppen).sort().forEach(function(g) {
+    var gKey = currentLeerLager + '::' + g;
+    html += renderSectionHeader(gKey, g);
+    if (!db.collapsedLeer[gKey]) {
+      gruppen[g].forEach(function(a) { html += renderArtikelRow(a); });
+    }
+  });
+
+  list.innerHTML = html;
 }
 
 function leerEntnehmen(artikelName) {
