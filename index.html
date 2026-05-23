@@ -215,7 +215,43 @@
     text-transform: uppercase; color: var(--text3);
     padding: 8px 0 4px; margin-top: 4px;
   }
-  .item-row {
+  .leer-lager-btn {
+    flex: 1; padding: 12px; border-radius: var(--radius-sm);
+    border: 1.5px solid var(--border2); background: var(--surface2);
+    color: var(--text2); font-size: 16px; font-weight: 500; cursor: pointer;
+  }
+  .leer-lager-btn.active {
+    background: var(--text); color: var(--bg); border-color: var(--text);
+  }
+  .leer-item-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 0; border-bottom: 0.5px solid var(--border);
+  }
+  .leer-item-name { font-size: 17px; font-weight: 500; flex: 1; }
+  .leer-item-menge { font-size: 17px; color: var(--text2); margin-right: 16px; min-width: 48px; text-align: right; }
+  .leer-minus-btn {
+    width: 52px; height: 52px; border-radius: 50%;
+    background: var(--surface2); border: 1.5px solid var(--border2);
+    color: var(--text); font-size: 28px; font-weight: 300;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .leer-minus-btn:active { background: var(--border2); }
+
+  /* iPad-Skalierung */
+  @media (min-width: 768px) {
+    :root { font-size: 20px; }
+    .app-name { font-size: 26px; }
+    .tab { font-size: 16px; padding: 10px 16px; }
+    .leer-item-name { font-size: 22px; }
+    .leer-item-menge { font-size: 22px; }
+    .leer-minus-btn { width: 68px; height: 68px; font-size: 36px; }
+    .leer-item-row { padding: 14px 0; }
+    .leer-lager-btn { font-size: 20px; padding: 16px; }
+    .item-row { font-size: 16px; }
+    input, button { font-size: 18px; }
+    #mic-btn { width: 90px; height: 90px; font-size: 40px; }
+  }
     display: flex; justify-content: space-between; align-items: center;
     padding: 5px 0; border-bottom: 0.5px solid var(--border); font-size: 13px;
   }
@@ -278,7 +314,8 @@
         <b style="color:var(--text);">v22</b> Artikel-Einheiten für Alkohol &amp; Softdrinks (erster Buchstabe)<br>
         <b style="color:var(--text);">v23</b> Scrollen &amp; Drag &amp; Drop per Long Press<br>
         <b style="color:var(--text);">v27</b> Crop-Editor mit Cropper.js<br>
-        <b style="color:var(--text);">v28</b> Cloud-Sync über Cloudflare KV (automatisch + manuell per ↻)
+        <b style="color:var(--text);">v28</b> Cloud-Sync über Cloudflare KV (automatisch + manuell per ↻)<br>
+        <b style="color:var(--text);">v29</b> Tab „Leer" für schnelle Entnahmen + automatische iPad-Skalierung
       </div>
     </div>
   </div>
@@ -314,6 +351,7 @@
   <button class="tab" onclick="showTab('lager')">Lager</button>
   <button class="tab" id="tab-btn-warnungen" onclick="showTab('warnungen')">Warnungen</button>
   <button class="tab" onclick="showTab('verlauf')">Verlauf</button>
+  <button class="tab" onclick="showTab('leer')">Leer</button>
 </div>
 
 <main>
@@ -358,6 +396,17 @@
     <div id="log-list"></div>
     <div id="log-empty" class="empty-state" style="display:none;">
       <i class="ti ti-history"></i>Noch keine Aktionen aufgezeichnet.
+    </div>
+  </div>
+
+  <div id="tab-leer" style="display:none;">
+    <div style="display:flex;gap:8px;margin-bottom:16px;">
+      <button id="leer-btn-hinten" class="leer-lager-btn active" onclick="setLeerLager('Hinten')">Hinten</button>
+      <button id="leer-btn-rapa" class="leer-lager-btn" onclick="setLeerLager('Rapa Bar')">Rapa Bar</button>
+    </div>
+    <div id="leer-list"></div>
+    <div id="leer-empty" class="empty-state" style="display:none;">
+      <i class="ti ti-package"></i>Keine Artikel vorhanden.
     </div>
   </div>
 </main>
@@ -884,15 +933,61 @@ window.addEventListener('load', function() {
   setInterval(syncFromCloud, 30000);
 });
 
+var currentLeerLager = 'Hinten';
+
 function showTab(tab) {
   currentTab = tab;
-  ['sprache','lager','warnungen','verlauf'].forEach(function(t, i) {
+  ['sprache','lager','warnungen','verlauf','leer'].forEach(function(t, i) {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
     document.querySelectorAll('.tab')[i].classList.toggle('active', t === tab);
   });
   if (tab === 'lager') renderLager();
   if (tab === 'verlauf') renderLog();
   if (tab === 'warnungen') renderWarnungen();
+  if (tab === 'leer') renderLeer();
+}
+
+function setLeerLager(name) {
+  currentLeerLager = name;
+  document.getElementById('leer-btn-hinten').classList.toggle('active', name === 'Hinten');
+  document.getElementById('leer-btn-rapa').classList.toggle('active', name === 'Rapa Bar');
+  renderLeer();
+}
+
+function renderLeer() {
+  var lager = db.lager[currentLeerLager] || {};
+  var artikel = Object.keys(lager).filter(function(a) { return lager[a].menge > 0; });
+  artikel.sort(function(a, b) { return a.localeCompare(b, 'de'); });
+  var list = document.getElementById('leer-list');
+  var empty = document.getElementById('leer-empty');
+  if (artikel.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = artikel.map(function(a) {
+    var einheit = getEinheit(a);
+    var menge = lager[a].menge;
+    var mengeAnzeige = einheit ? menge + ' ' + einheit : menge + 'x';
+    var safe = a.replace(/'/g, "\\'");
+    return '<div class="leer-item-row">' +
+      '<span class="leer-item-name">' + a + '</span>' +
+      '<span class="leer-item-menge">' + mengeAnzeige + '</span>' +
+      '<button class="leer-minus-btn" onclick="leerEntnehmen(\'' + safe + '\')">−</button>' +
+    '</div>';
+  }).join('');
+}
+
+function leerEntnehmen(artikelName) {
+  var lager = db.lager[currentLeerLager];
+  if (!lager || !lager[artikelName]) return;
+  if (lager[artikelName].menge <= 0) return;
+  lager[artikelName].menge -= 1;
+  db.log.unshift({ zeit: new Date().toISOString(), text: '−1 ' + artikelName + ' aus ' + currentLeerLager });
+  if (db.log.length > 200) db.log = db.log.slice(0, 200);
+  saveDb();
+  renderLeer();
 }
 
 function getZoneMenge(zone, artikel) {
