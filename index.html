@@ -356,6 +356,7 @@
   <button class="tab" onclick="showTab('lager')">Lager</button>
   <button class="tab" id="tab-btn-warnungen" onclick="showTab('warnungen')">Warnungen</button>
   <button class="tab" onclick="showTab('leer')">Leer</button>
+  <button class="tab" onclick="showTab('verbrauch')">Verbrauch</button>
   <button class="tab" onclick="showTab('verlauf')">Verlauf</button>
 </div>
 
@@ -412,6 +413,27 @@
     <div id="leer-list"></div>
     <div id="leer-empty" class="empty-state" style="display:none;">
       <i class="ti ti-package"></i>Keine Artikel vorhanden.
+    </div>
+  </div>
+
+  <div id="tab-verbrauch" style="display:none;">
+    <!-- Verbrauchsliste -->
+    <div id="verbrauch-list" style="margin-bottom:16px;"></div>
+    <div id="verbrauch-empty" class="empty-state" style="display:none;">
+      <i class="ti ti-chart-bar"></i>Noch kein Verbrauch erfasst.
+    </div>
+    <!-- KI-Assistent für Verbrauchsanalyse -->
+    <div style="border-top:0.5px solid var(--border);padding-top:14px;margin-top:8px;">
+      <div id="verbrauch-ai-output" style="font-size:13px;color:var(--text2);margin-bottom:10px;min-height:40px;line-height:1.6;white-space:pre-wrap;"></div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input id="verbrauch-text-input" type="text" placeholder="Verbrauch analysieren…"
+          style="flex:1;padding:10px 14px;border-radius:var(--radius-sm);border:0.5px solid var(--border2);background:var(--surface);color:var(--text);font-size:14px;outline:none;"
+          onkeydown="if(event.key==='Enter')sendVerbrauchFrage()"/>
+        <button onclick="sendVerbrauchFrage()" style="padding:10px 16px;border-radius:var(--radius-sm);background:var(--text);color:var(--bg);border:none;font-size:14px;font-weight:500;">→</button>
+        <button onclick="toggleVerbrauchMic()" id="verbrauch-mic-btn" style="padding:10px;border-radius:var(--radius-sm);background:var(--surface2);border:0.5px solid var(--border2);font-size:18px;color:var(--text3);">
+          <i class="ti ti-microphone" id="verbrauch-mic-icon"></i>
+        </button>
+      </div>
     </div>
   </div>
 </main>
@@ -500,7 +522,7 @@ var PROXY_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/';
 // DB-Struktur:
 // db.lager[lagerName][artikelName] = { menge: N, gruppe: "Werkzeug" }
 // Migration: Falls alter Eintrag noch eine Zahl ist, konvertieren
-var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {}, einheiten: {}, snooze: {}, leerFavoriten: [], collapsedGruppen: {}, collapsedLeer: {} };
+var db = JSON.parse(localStorage.getItem('lagerfeld_db2') || 'null') || { lager: {}, log: [], mindest: {}, lagerOrder: [], collapsed: {}, sortMode: {}, einheiten: {}, snooze: {}, leerFavoriten: [], collapsedGruppen: {}, collapsedLeer: {}, verbrauch: [] };
 if (!db.mindest) db.mindest = {};
 if (!db.lagerOrder) db.lagerOrder = [];
 if (!db.collapsed) db.collapsed = {};
@@ -510,6 +532,7 @@ if (!db.snooze) db.snooze = {};
 if (!db.leerFavoriten) db.leerFavoriten = [];
 if (!db.collapsedGruppen) db.collapsedGruppen = {};
 if (!db.collapsedLeer) db.collapsedLeer = {};
+if (!db.verbrauch) db.verbrauch = [];
 // Fotos werden separat gespeichert (nicht in lagerfeld_db2) wegen Größe
 var fotoDB = JSON.parse(localStorage.getItem('lagerfeld_fotos') || '{}'); // { "artikelName": "data:image/jpeg;base64,..." }
 
@@ -762,6 +785,95 @@ function deleteMindest(zone, artikel) {
   logAction('Mindestbestand "' + artikel + '" in Zone "' + zone + '" manuell gelöscht');
   saveDb();
   renderWarnungen();
+}
+
+// ═══ Verbrauch Tab ═══
+function renderVerbrauch() {
+  var list = document.getElementById('verbrauch-list');
+  var empty = document.getElementById('verbrauch-empty');
+  if (!db.verbrauch || !db.verbrauch.length) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = db.verbrauch.map(function(v) {
+    var d = new Date(v.datum);
+    var datum = d.toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric' });
+    var zeit = d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit' });
+    var einheit = getEinheit(v.artikel);
+    var mengeAnzeige = einheit ? v.menge + ' ' + einheit : v.menge + 'x';
+    return '<div class="item-row"><span class="item-name" style="color:var(--text2);font-size:12px;">' + datum + ' ' + zeit + '</span><span style="flex:1;margin-left:8px;">' + v.artikel + '</span><span class="item-qty">' + mengeAnzeige + '</span></div>';
+  }).join('');
+}
+
+var verbrauchRecognition = null;
+var verbrauchMicActive = false;
+
+function toggleVerbrauchMic() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+    alert('Spracherkennung wird von diesem Browser nicht unterstützt.');
+    return;
+  }
+  if (verbrauchMicActive) {
+    if (verbrauchRecognition) verbrauchRecognition.stop();
+    verbrauchMicActive = false;
+    document.getElementById('verbrauch-mic-btn').style.background = 'var(--surface2)';
+    document.getElementById('verbrauch-mic-icon').className = 'ti ti-microphone';
+    return;
+  }
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  verbrauchRecognition = new SR();
+  verbrauchRecognition.lang = 'de-DE';
+  verbrauchRecognition.interimResults = false;
+  verbrauchRecognition.onresult = function(e) {
+    var text = e.results[0][0].transcript;
+    document.getElementById('verbrauch-text-input').value = text;
+    sendVerbrauchFrage();
+  };
+  verbrauchRecognition.onend = function() {
+    verbrauchMicActive = false;
+    document.getElementById('verbrauch-mic-btn').style.background = 'var(--surface2)';
+    document.getElementById('verbrauch-mic-icon').className = 'ti ti-microphone';
+  };
+  verbrauchRecognition.start();
+  verbrauchMicActive = true;
+  document.getElementById('verbrauch-mic-btn').style.background = 'var(--red, #e53e3e)';
+  document.getElementById('verbrauch-mic-icon').className = 'ti ti-microphone-off';
+}
+
+async function sendVerbrauchFrage() {
+  var input = document.getElementById('verbrauch-text-input');
+  var frage = input.value.trim();
+  if (!frage) return;
+  input.value = '';
+  var output = document.getElementById('verbrauch-ai-output');
+  output.textContent = '…';
+
+  var apiKey = getApiKey();
+  if (!apiKey) { output.textContent = 'Bitte erst API-Schlüssel in den Einstellungen eintragen.'; return; }
+
+  var verbrauchJson = JSON.stringify(db.verbrauch || []);
+
+  try {
+    var resp = await fetch(PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: 'Du bist Assistent für die Verbrauchsanalyse der Rapa Bar. Hier sind alle Verbrauchsdaten (JSON):\n' + verbrauchJson + '\n\nJeder Eintrag hat: datum (ISO), artikel (Name), menge (Zahl).\nDas heutige Datum ist: ' + new Date().toLocaleDateString('de-DE') + '.\n\nBeantworte folgende Frage auf Deutsch, kurz und präzise:\n' + frage
+        }]
+      })
+    });
+    var data = await resp.json();
+    var text = (data.content || []).map(function(b) { return b.text || ''; }).join('');
+    output.textContent = text;
+  } catch(e) {
+    output.textContent = 'Fehler: ' + e.message;
+  }
 }
 
 var recognition = null;
@@ -1048,7 +1160,7 @@ var currentLeerLager = 'Hinten';
 
 function showTab(tab) {
   currentTab = tab;
-  ['sprache','lager','warnungen','leer','verlauf'].forEach(function(t, i) {
+  ['sprache','lager','warnungen','leer','verbrauch','verlauf'].forEach(function(t, i) {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
     document.querySelectorAll('.tab')[i].classList.toggle('active', t === tab);
   });
@@ -1056,6 +1168,7 @@ function showTab(tab) {
   if (tab === 'verlauf') renderLog();
   if (tab === 'warnungen') renderWarnungen();
   if (tab === 'leer') renderLeer();
+  if (tab === 'verbrauch') renderVerbrauch();
 }
 
 function setLeerLager(name) {
@@ -1165,6 +1278,11 @@ function leerEntnehmen(artikelName) {
       lager[artikelName].menge -= 1;
       db.log.unshift({ zeit: new Date().toISOString(), text: '−1 ' + artikelName + ' aus ' + currentLeerLager });
       if (db.log.length > 200) db.log = db.log.slice(0, 200);
+      // Verbrauch nur für Rapa Bar erfassen
+      if (currentLeerLager === 'Rapa Bar') {
+        if (!db.verbrauch) db.verbrauch = [];
+        db.verbrauch.unshift({ datum: new Date().toISOString(), artikel: artikelName, menge: 1 });
+      }
       saveDb();
       renderLeer();
     }
