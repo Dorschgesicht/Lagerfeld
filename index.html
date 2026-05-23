@@ -275,7 +275,7 @@
         <b style="color:var(--text);">v16</b> Bugfix Bestandsabgleich &amp; Zonenzuordnung<br>
         <b style="color:var(--text);">v22</b> Artikel-Einheiten für Alkohol &amp; Softdrinks (erster Buchstabe)<br>
         <b style="color:var(--text);">v23</b> Scrollen &amp; Drag &amp; Drop per Long Press<br>
-        <b style="color:var(--text);">v24</b> Foto-Hinterlegung per Long Press &amp; KI-Erkennung per Kamera
+        <b style="color:var(--text);">v24</b> Foto-Hinterlegung per Long Press (Kamera öffnet direkt bei neuem Artikel)
       </div>
     </div>
   </div>
@@ -287,9 +287,7 @@
     <div class="app-sub">Lagerverwaltung</div>
   </div>
   <div style="display:flex;gap:8px;align-items:center;">
-    <button class="lager-delete-btn" onclick="openKameraOverlay()" aria-label="Artikel per Foto erkennen" style="font-size:40px;color:var(--text3);display:flex;align-items:center;line-height:1;">
-      <i class="ti ti-camera"></i>
-    </button>
+    <button class="lager-delete-btn" onclick="exportExcel()" aria-label="Excel exportieren" style="font-size:40px;color:var(--text3);display:flex;align-items:center;line-height:1;">
       <i class="ti ti-table"></i><i class="ti ti-arrow-up" style="font-size:20px;margin-left:-4px;margin-bottom:14px;"></i>
     </button>
     <button class="lager-delete-btn" onclick="exportBackup()" aria-label="Backup exportieren" style="font-size:40px;color:var(--text3);display:flex;align-items:center;line-height:1;">
@@ -372,19 +370,6 @@
   </div>
 </div>
 
-<!-- Kamera für neue Artikel per Foto -->
-<div id="kamera-overlay" class="confirm-overlay" style="display:none;">
-  <div class="confirm-box" style="text-align:center;">
-    <div class="confirm-title">Artikel per Foto erkennen</div>
-    <div class="confirm-sub" style="margin-bottom:12px;">Mache ein Foto des Flaschenlabels – die KI erkennt den Artikel automatisch.</div>
-    <input type="file" id="kamera-input" accept="image/*" capture="environment" style="display:none;" onchange="handleKameraFoto(event)">
-    <div style="display:flex;gap:10px;flex-direction:column;">
-      <button class="confirm-btn save" onclick="document.getElementById('kamera-input').click()" style="background:var(--text);color:var(--bg);border:none;">📷 Foto aufnehmen</button>
-      <button class="confirm-btn cancel" onclick="closeKameraOverlay()">Abbrechen</button>
-    </div>
-    <div id="kamera-status" style="font-size:13px;color:var(--text2);margin-top:10px;"></div>
-  </div>
-</div>
 <div id="confirm-overlay" class="confirm-overlay" style="display:none;">
   <div class="confirm-box">
     <div class="confirm-title" id="confirm-title">Lager löschen?</div>
@@ -719,76 +704,6 @@ function handleFotoChange(event) {
     closeFotoOverlay();
     renderLager();
   });
-  event.target.value = '';
-}
-
-// Kamera-Overlay für neue Artikel per Foto
-function openKameraOverlay() {
-  document.getElementById('kamera-overlay').style.display = 'flex';
-  document.getElementById('kamera-status').textContent = '';
-}
-function closeKameraOverlay() {
-  document.getElementById('kamera-overlay').style.display = 'none';
-  document.getElementById('kamera-status').textContent = '';
-}
-async function handleKameraFoto(event) {
-  var file = event.target.files[0];
-  if (!file) return;
-  var status = document.getElementById('kamera-status');
-  status.textContent = 'KI erkennt die Flasche…';
-
-  var reader = new FileReader();
-  reader.onload = async function(e) {
-    var base64 = e.target.result.split(',')[1];
-    var apiKey = getApiKey();
-    try {
-      var resp = await fetch(PROXY_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-5-20250929',
-          max_tokens: 500,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'image', source: { type: 'base64', media_type: file.type, data: base64 } },
-              { type: 'text', text: 'Erkenne diese Alkoholflasche. Antworte NUR mit einem JSON-Objekt: {"name": "Produktname", "einheit": "Flaschen", "erkannt": true}. Falls du keine Flasche erkennst: {"erkannt": false}. Kein Markdown, keine Backticks.' }
-            ]
-          }]
-        })
-      });
-      var data = await resp.json();
-      var raw = (data.content || []).map(function(b) { return b.text || ''; }).join('');
-      var parsed = JSON.parse(raw.replace(/```json|```/g, '').trim());
-
-      if (!parsed.erkannt) {
-        status.textContent = 'Keine Flasche erkannt. Bitte nochmal versuchen.';
-        return;
-      }
-
-      var artikelName = parsed.name;
-      var einheit = parsed.einheit || 'Flaschen';
-
-      // Foto komprimiert speichern
-      compressImage(file, function(dataUrl) {
-        saveFoto(artikelName, dataUrl);
-        checkStorageUsage();
-      });
-
-      // Einheit setzen falls noch nicht vorhanden
-      if (!db.einheiten[artikelName]) setEinheit(artikelName, einheit);
-
-      status.textContent = '✓ Erkannt: ' + artikelName + '. In welchem Lager soll er angelegt werden?';
-      document.getElementById('text-input').value = 'Füge 1 ' + artikelName + ' als Alkohol hinzu in ';
-      closeKameraOverlay();
-      showTab('sprache');
-      document.getElementById('text-input').focus();
-
-    } catch(err) {
-      status.textContent = 'Fehler: ' + err.message;
-    }
-  };
-  reader.readAsDataURL(file);
   event.target.value = '';
 }
 
