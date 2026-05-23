@@ -811,13 +811,12 @@ function renderLager() {
 
     var chevron = isCollapsed ? 'ti-chevron-down' : 'ti-chevron-up';
     var sortBtn = sortMode === 'abc' ? 'ABC' : 'Grp';
-    return '<div class="lager-card" draggable="true" data-name="' + name + '" ondragstart="dragStart(event)" ondragover="dragOver(event)" ondrop="dragDrop(event)" ondragend="dragEnd(event)">'
+    return '<div class="lager-card" draggable="true" data-name="' + name + '" ondragstart="dragStart(event)" ondragover="dragOver(event)" ondrop="dragDrop(event)" ondragend="dragEnd(event)" ontouchstart="touchStart(event)" ontouchmove="touchMove(event)" ontouchend="touchEnd(event)">'
       + '<div class="lager-card-title">'
-      + '<div style="display:flex;align-items:center;gap:8px;cursor:grab;color:var(--text3);"><i class="ti ti-grip-vertical" style="font-size:16px;"></i><span style="color:var(--text);cursor:pointer;" onclick="toggleCollapse(\'' + safeName + '\')">' + name + '</span></div>'
+      + '<div style="display:flex;align-items:center;gap:8px;cursor:grab;color:var(--text3);"><i class="ti ti-grip-vertical" style="font-size:24px;"></i><span style="color:var(--text);cursor:pointer;" onclick="toggleCollapse(\'' + safeName + '\')">' + name + '</span></div>'
       + '<div style="display:flex;align-items:center;gap:8px;">'
       + '<span class="badge">' + itemKeys.length + ' Artikel</span>'
       + '<button class="lager-delete-btn" onclick="toggleSort(\'' + safeName + '\')" style="font-size:13px;font-weight:600;color:var(--text3);padding:4px 8px;border:0.5px solid var(--border2);border-radius:4px;background:transparent;">' + sortBtn + '</button>'
-      + '<button class="lager-delete-btn" onclick="toggleCollapse(\'' + safeName + '\')" style="font-size:16px;color:var(--text3);"><i class="ti ' + chevron + '"></i></button>'
       + '<button class="lager-delete-btn" onclick="askDeleteLager(\'' + safeName + '\')" aria-label="Lager löschen"><i class="ti ti-trash"></i></button>'
       + '</div></div>'
       + rows
@@ -832,10 +831,61 @@ function toggleCollapse(name) {
 }
 
 var dragSrc = null;
+var touchStartY = 0;
+var draggedElement = null;
+
 function dragStart(e) {
   dragSrc = e.currentTarget.dataset.name;
+  draggedElement = e.currentTarget;
   e.currentTarget.style.opacity = '0.5';
 }
+
+function touchStart(e) {
+  dragSrc = e.currentTarget.dataset.name;
+  draggedElement = e.currentTarget;
+  touchStartY = e.touches[0].clientY;
+  e.currentTarget.style.opacity = '0.5';
+}
+
+function touchMove(e) {
+  if (!draggedElement) return;
+  e.preventDefault();
+  var touch = e.touches[0];
+  var allCards = document.querySelectorAll('.lager-card');
+  allCards.forEach(function(card) {
+    var rect = card.getBoundingClientRect();
+    card.style.borderTop = '';
+    if (touch.clientY > rect.top && touch.clientY < rect.bottom && card.dataset.name !== dragSrc) {
+      card.style.borderTop = '2px solid var(--text)';
+    }
+  });
+}
+
+function touchEnd(e) {
+  if (!draggedElement) return;
+  e.currentTarget.style.opacity = '';
+  var touch = e.changedTouches[0];
+  var allCards = document.querySelectorAll('.lager-card');
+  allCards.forEach(function(card) {
+    var rect = card.getBoundingClientRect();
+    if (touch.clientY > rect.top && touch.clientY < rect.bottom && card.dataset.name !== dragSrc) {
+      var target = card.dataset.name;
+      syncLagerOrder();
+      var from = db.lagerOrder.indexOf(dragSrc);
+      var to = db.lagerOrder.indexOf(target);
+      if (from !== -1 && to !== -1) {
+        db.lagerOrder.splice(from, 1);
+        db.lagerOrder.splice(to, 0, dragSrc);
+        saveDb();
+        renderLager();
+      }
+    }
+    card.style.borderTop = '';
+  });
+  dragSrc = null;
+  draggedElement = null;
+}
+
 function dragEnd(e) {
   e.currentTarget.style.opacity = '';
   document.querySelectorAll('.lager-card').forEach(function(c) { c.style.borderTop = ''; });
