@@ -370,6 +370,22 @@
   </div>
 </div>
 
+<!-- Crop Editor -->
+<div id="crop-overlay" class="confirm-overlay" style="display:none;align-items:stretch;padding:0;">
+  <div style="background:var(--bg);width:100%;display:flex;flex-direction:column;height:100%;">
+    <div style="padding:14px 20px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+      <button class="confirm-btn cancel" style="flex:none;width:auto;padding:8px 14px;" onclick="closeCropOverlay()">Abbrechen</button>
+      <span style="font-size:15px;font-weight:600;">Foto zuschneiden</span>
+      <button class="confirm-btn save" style="flex:none;width:auto;padding:8px 14px;background:var(--text);color:var(--bg);border:none;" onclick="confirmCrop()">Speichern</button>
+    </div>
+    <div style="flex:1;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#000;">
+      <canvas id="crop-canvas" style="max-width:100%;max-height:100%;touch-action:none;"></canvas>
+      <div id="crop-frame" style="position:absolute;border:2px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,0.5);touch-action:none;"></div>
+    </div>
+    <div style="padding:10px;text-align:center;font-size:12px;color:var(--text3);">Rahmen verschieben &amp; skalieren</div>
+  </div>
+</div>
+
 <div id="confirm-overlay" class="confirm-overlay" style="display:none;">
   <div class="confirm-box">
     <div class="confirm-title" id="confirm-title">Lager löschen?</div>
@@ -646,6 +662,126 @@ function deleteMindest(zone, artikel) {
 }
 
 var recognition = null;
+// Crop Editor
+var cropImg = null;
+var cropArtikel = null;
+var cropFile = null;
+var cropFrame = { x: 0, y: 0, size: 0 };
+var canvasRect = null;
+var dragMode = null; // 'move' or 'resize'
+var dragStart = null;
+
+function openCropOverlay(file, artikelName) {
+  cropArtikel = artikelName;
+  cropFile = file;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    cropImg = new Image();
+    cropImg.onload = function() {
+      var canvas = document.getElementById('crop-canvas');
+      var maxW = window.innerWidth;
+      var maxH = window.innerHeight * 0.65;
+      var scale = Math.min(maxW / cropImg.width, maxH / cropImg.height, 1);
+      canvas.width = Math.round(cropImg.width * scale);
+      canvas.height = Math.round(cropImg.height * scale);
+      var ctx = canvas.getContext('2d');
+      ctx.drawImage(cropImg, 0, 0, canvas.width, canvas.height);
+
+      // Initial crop frame: centered square, 70% of shorter side
+      var sz = Math.round(Math.min(canvas.width, canvas.height) * 0.7);
+      cropFrame = {
+        x: Math.round((canvas.width - sz) / 2),
+        y: Math.round((canvas.height - sz) / 2),
+        size: sz
+      };
+      updateCropFrame();
+      document.getElementById('crop-overlay').style.display = 'flex';
+    };
+    cropImg.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function updateCropFrame() {
+  var canvas = document.getElementById('crop-canvas');
+  canvasRect = canvas.getBoundingClientRect();
+  var frame = document.getElementById('crop-frame');
+  frame.style.left = (canvasRect.left + cropFrame.x) + 'px';
+  frame.style.top = (canvasRect.top + cropFrame.y) + 'px';
+  frame.style.width = cropFrame.size + 'px';
+  frame.style.height = cropFrame.size + 'px';
+}
+
+function clampFrame() {
+  var canvas = document.getElementById('crop-canvas');
+  cropFrame.size = Math.max(40, Math.min(cropFrame.size, canvas.width, canvas.height));
+  cropFrame.x = Math.max(0, Math.min(cropFrame.x, canvas.width - cropFrame.size));
+  cropFrame.y = Math.max(0, Math.min(cropFrame.y, canvas.height - cropFrame.size));
+}
+
+// Touch events on crop frame
+document.addEventListener('DOMContentLoaded', function() {
+  var frame = document.getElementById('crop-frame');
+
+  frame.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    canvasRect = document.getElementById('crop-canvas').getBoundingClientRect();
+    var t = e.touches[0];
+    var fx = canvasRect.left + cropFrame.x;
+    var fy = canvasRect.top + cropFrame.y;
+    var fw = cropFrame.size;
+    // Bottom-right 30px = resize handle
+    var inResize = t.clientX > fx + fw - 30 && t.clientY > fy + fw - 30;
+    dragMode = inResize ? 'resize' : 'move';
+    dragStart = { x: t.clientX, y: t.clientY, frame: Object.assign({}, cropFrame) };
+  }, { passive: false });
+
+  frame.addEventListener('touchmove', function(e) {
+    e.preventDefault();
+    if (!dragStart) return;
+    var t = e.touches[0];
+    var dx = t.clientX - dragStart.x;
+    var dy = t.clientY - dragStart.y;
+    if (dragMode === 'move') {
+      cropFrame.x = dragStart.frame.x + dx;
+      cropFrame.y = dragStart.frame.y + dy;
+    } else {
+      var delta = Math.max(dx, dy);
+      cropFrame.size = dragStart.frame.size + delta;
+    }
+    clampFrame();
+    updateCropFrame();
+  }, { passive: false });
+
+  frame.addEventListener('touchend', function() { dragStart = null; });
+});
+
+function closeCropOverlay() {
+  document.getElementById('crop-overlay').style.display = 'none';
+  cropImg = null; cropArtikel = null; cropFile = null;
+}
+
+function confirmCrop() {
+  var canvas = document.getElementById('crop-canvas');
+  var scaleX = cropImg.naturalWidth / canvas.width;
+  var scaleY = cropImg.naturalHeight / canvas.height;
+  var out = document.createElement('canvas');
+  out.width = 200; out.height = 200;
+  var ctx = out.getContext('2d');
+  ctx.drawImage(
+    cropImg,
+    cropFrame.x * scaleX, cropFrame.y * scaleY,
+    cropFrame.size * scaleX, cropFrame.size * scaleY,
+    0, 0, 200, 200
+  );
+  var dataUrl = out.toDataURL('image/jpeg', 0.6);
+  saveFoto(cropArtikel, dataUrl);
+  checkStorageUsage();
+  closeCropOverlay();
+  closeFotoOverlay();
+  renderLager();
+}
+
 // Foto PopUp
 var currentFotoArtikel = null;
 function openFotoOverlay(artikelName) {
@@ -684,12 +820,8 @@ function handleFotoChange(event) {
   var file = event.target.files[0];
   if (!file) return;
   var artikelName = event.target.dataset.artikel || currentFotoArtikel;
-  compressImage(file, function(dataUrl) {
-    saveFoto(artikelName, dataUrl);
-    checkStorageUsage();
-    closeFotoOverlay();
-    renderLager();
-  });
+  closeFotoOverlay();
+  openCropOverlay(file, artikelName);
   event.target.value = '';
 }
 
