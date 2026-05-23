@@ -40,7 +40,10 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; background: var(--bg); font-family: -apple-system, 'Helvetica Neue', sans-serif; color: var(--text); }
-  body { display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; zoom: 1.5; }
+  body { display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; }
+  @media (min-width: 768px) {
+    body { zoom: 1.5; max-width: 720px; }
+  }
 
   #setup-screen {
     position: fixed; inset: 0; background: var(--bg);
