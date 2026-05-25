@@ -332,7 +332,9 @@
         <b style="color:var(--text);">v30</b> Mindestbestand direkt am Artikel (🍾-Icon)<br>
         <b style="color:var(--text);">v31</b> Warnungen 4 Wochen zurückstellen (Snooze)<br>
         <b style="color:var(--text);">v32</b> Tab „Verbrauch" mit KI-Analyse (nur Rapa Bar)<br>
-        <b style="color:var(--text);">v33</b> Tab „Angebote" – Prospektsuche mit Bestandsabgleich
+        <b style="color:var(--text);">v33</b> Tab „Angebote" – Prospektsuche mit Bestandsabgleich<br>
+        <b style="color:var(--text);">v34</b> Artikelnamen werden nicht mehr fälschlich zusammengeführt<br>
+        <b style="color:var(--text);">v35</b> Nachfüll-Dialog bei Entnahme aus Rapa Bar (von Hinten auffüllen)
       </div>
     </div>
   </div>
@@ -658,18 +660,29 @@ function askDeleteLager(name) {
 }
 
 var genericConfirmCallback = null;
-function showConfirm(message, callback) {
+var genericConfirmCancelCallback = null;
+function showConfirm(message, callback, okLabel, cancelLabel, cancelCallback) {
   genericConfirmCallback = callback;
+  genericConfirmCancelCallback = cancelCallback || null;
   document.getElementById('generic-confirm-title').textContent = message;
+  document.getElementById('generic-confirm-ok').textContent = okLabel || 'OK';
+  var cancelBtn = document.getElementById('generic-confirm-overlay').querySelector('.confirm-btn.cancel');
+  if (cancelBtn) cancelBtn.textContent = cancelLabel || 'Abbrechen';
   document.getElementById('generic-confirm-overlay').style.display = 'flex';
 }
 function doGenericConfirm() {
   document.getElementById('generic-confirm-overlay').style.display = 'none';
-  if (genericConfirmCallback) { genericConfirmCallback(); genericConfirmCallback = null; }
+  var cb = genericConfirmCallback;
+  genericConfirmCallback = null;
+  genericConfirmCancelCallback = null;
+  if (cb) cb();
 }
 function closeGenericConfirm() {
   document.getElementById('generic-confirm-overlay').style.display = 'none';
+  var cb = genericConfirmCancelCallback;
   genericConfirmCallback = null;
+  genericConfirmCancelCallback = null;
+  if (cb) cb();
 }
 
 function closeConfirm() {
@@ -1410,20 +1423,54 @@ function leerEntnehmen(artikelName) {
   if (lager[artikelName].menge <= 0) return;
   var einheit = getEinheit(artikelName);
   var mengeAnzeige = einheit ? '1 ' + einheit : '1x';
+  var entnahmeLager = currentLeerLager;
   showConfirm(
     mengeAnzeige + ' ' + artikelName + ' wurde verbraucht',
     function() {
       lager[artikelName].menge -= 1;
-      db.log.unshift({ zeit: new Date().toISOString(), text: '−1 ' + artikelName + ' aus ' + currentLeerLager });
+      db.log.unshift({ zeit: new Date().toISOString(), text: '−1 ' + artikelName + ' aus ' + entnahmeLager });
       if (db.log.length > 200) db.log = db.log.slice(0, 200);
       // Verbrauch nur für Rapa Bar erfassen
-      if (currentLeerLager === 'Rapa Bar') {
+      if (entnahmeLager === 'Rapa Bar') {
         if (!db.verbrauch) db.verbrauch = [];
         db.verbrauch.unshift({ datum: new Date().toISOString(), artikel: artikelName, menge: 1 });
       }
       saveDb();
       renderLeer();
+
+      // Nachfüll-Dialog nur bei Entnahme aus Rapa Bar
+      if (entnahmeLager === 'Rapa Bar') {
+        fragenNachfuellen(artikelName);
+      }
     }
+  );
+}
+
+function fragenNachfuellen(artikelName) {
+  var einheit = getEinheit(artikelName);
+  var mengeAnzeige = einheit ? '1 ' + einheit : '1x';
+  showConfirm(
+    'Wurde ' + artikelName + ' aus „Hinten" nach „Rapa Bar" aufgefüllt?',
+    function() {
+      // JA: 1x aus Hinten entnehmen, 1x zu Rapa Bar hinzufügen
+      var hinten = db.lager['Hinten'];
+      var rapa = db.lager['Rapa Bar'];
+      if (!hinten || !hinten[artikelName] || hinten[artikelName].menge <= 0) {
+        showConfirm('„' + artikelName + '" ist in „Hinten" nicht (mehr) vorhanden. Es konnte nicht aufgefüllt werden.', function(){}, 'OK', ' ');
+        return;
+      }
+      hinten[artikelName].menge -= 1;
+      if (!rapa[artikelName]) {
+        rapa[artikelName] = { menge: 0, gruppe: hinten[artikelName].gruppe || 'Sonstiges' };
+      }
+      rapa[artikelName].menge += 1;
+      db.log.unshift({ zeit: new Date().toISOString(), text: '↻ ' + mengeAnzeige + ' ' + artikelName + ' von Hinten nach Rapa Bar aufgefüllt' });
+      if (db.log.length > 200) db.log = db.log.slice(0, 200);
+      saveDb();
+      renderLeer();
+    },
+    'Ja',
+    'Nein'
   );
 }
 
