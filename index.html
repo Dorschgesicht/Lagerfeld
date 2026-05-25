@@ -338,7 +338,8 @@
         <b style="color:var(--text);">v32</b> Tab „Verbrauch" mit KI-Analyse (nur Rapa Bar)<br>
         <b style="color:var(--text);">v33</b> Tab „Angebote" – Prospektsuche mit Bestandsabgleich<br>
         <b style="color:var(--text);">v34</b> Artikelnamen werden nicht mehr fälschlich zusammengeführt<br>
-        <b style="color:var(--text);">v35</b> Nachfüll-Dialog bei Entnahme aus Rapa Bar (von Hinten auffüllen)
+        <b style="color:var(--text);">v35</b> Nachfüll-Dialog bei Entnahme aus Rapa Bar (von Hinten auffüllen)<br>
+        <b style="color:var(--text);">v36</b> Virtuelles Lager „Schuppen OHG" als eigener Tab
       </div>
     </div>
   </div>
@@ -375,6 +376,7 @@
   <button class="tab" onclick="showTab('leer')">Leer</button>
   <button class="tab" onclick="showTab('verbrauch')">Verbrauch</button>
   <button class="tab" onclick="showTab('angebote')">Angebote</button>
+  <button class="tab" onclick="showTab('ohg')">OHG</button>
   <button class="tab" onclick="showTab('verlauf')">Verlauf</button>
 </div>
 
@@ -404,6 +406,13 @@
     <div id="lager-list"></div>
     <div id="lager-empty" class="empty-state" style="display:none;">
       <i class="ti ti-box-off"></i>Noch keine Lager angelegt.<br>Nutze die Sprachsteuerung!
+    </div>
+  </div>
+
+  <div id="tab-ohg" style="display:none;">
+    <div id="ohg-list"></div>
+    <div id="ohg-empty" class="empty-state" style="display:none;">
+      <i class="ti ti-box-off"></i>Noch keine Artikel im OHG-Lager.<br>Nutze die Sprachsteuerung!
     </div>
   </div>
 
@@ -564,6 +573,9 @@ if (!db.collapsedGruppen) db.collapsedGruppen = {};
 if (!db.collapsedLeer) db.collapsedLeer = {};
 if (!db.verbrauch) db.verbrauch = [];
 if (!db.angebote) db.angebote = [];
+if (!db.ohg) db.ohg = {};
+if (!db.ohgCollapsedGruppen) db.ohgCollapsedGruppen = {};
+if (!db.ohgSortMode) db.ohgSortMode = 'abc';
 // Fotos werden separat gespeichert (nicht in lagerfeld_db2) wegen Größe
 var fotoDB = JSON.parse(localStorage.getItem('lagerfeld_fotos') || '{}'); // { "artikelName": "data:image/jpeg;base64,..." }
 
@@ -1197,7 +1209,20 @@ function confirmRename() {
   if (!pendingRename) return;
   var neuName = document.getElementById('rename-input').value.trim();
   if (!neuName || neuName === pendingRename.altName) { closeRename(); return; }
-  var l = pendingRename.lager, alt = pendingRename.altName;
+  var alt = pendingRename.altName;
+  // OHG-Lager
+  if (pendingRename.ohg) {
+    if (db.ohg && db.ohg[alt]) {
+      db.ohg[neuName] = db.ohg[alt];
+      delete db.ohg[alt];
+      logAction('OHG-Artikel "' + alt + '" → "' + neuName + '"');
+      saveDb();
+      renderOhg();
+    }
+    closeRename();
+    return;
+  }
+  var l = pendingRename.lager;
   if (db.lager[l] && db.lager[l][alt]) {
     db.lager[l][neuName] = db.lager[l][alt];
     delete db.lager[l][alt];
@@ -1314,11 +1339,12 @@ var currentLeerLager = 'Hinten';
 
 function showTab(tab) {
   currentTab = tab;
-  ['sprache','lager','warnungen','leer','verbrauch','angebote','verlauf'].forEach(function(t, i) {
+  ['sprache','lager','warnungen','leer','verbrauch','angebote','ohg','verlauf'].forEach(function(t, i) {
     document.getElementById('tab-' + t).style.display = t === tab ? '' : 'none';
     document.querySelectorAll('.tab')[i].classList.toggle('active', t === tab);
   });
   if (tab === 'lager') renderLager();
+  if (tab === 'ohg') renderOhg();
   if (tab === 'verlauf') renderLog();
   if (tab === 'warnungen') renderWarnungen();
   if (tab === 'leer') renderLeer();
@@ -1727,6 +1753,92 @@ function toggleCollapse(name) {
   renderLager();
 }
 
+// ═══ OHG virtuelles Lager ═══
+function renderOhg() {
+  var list = document.getElementById('ohg-list');
+  var empty = document.getElementById('ohg-empty');
+  var items = db.ohg || {};
+  var itemKeys = Object.keys(items);
+  if (!itemKeys.length) { list.innerHTML = ''; empty.style.display = ''; return; }
+  empty.style.display = 'none';
+
+  var sortMode = db.ohgSortMode || 'abc';
+
+  var rows = '';
+  if (sortMode === 'grp') {
+    var gruppen = {};
+    itemKeys.forEach(function(k) {
+      var g = items[k].gruppe || 'Sonstiges';
+      if (!gruppen[g]) gruppen[g] = [];
+      gruppen[g].push(k);
+    });
+    Object.keys(gruppen).sort().forEach(function(g) {
+      var gruppeKey = g;
+      var gruppeCollapsed = db.ohgCollapsedGruppen && db.ohgCollapsedGruppen[gruppeKey];
+      var chevronG = gruppeCollapsed ? 'ti-chevron-down' : 'ti-chevron-up';
+      var safeG = g.replace(/'/g, "\\'");
+      rows += '<div class="gruppe-label" onclick="toggleOhgGruppe(\'' + safeG + '\')" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">'
+        + '<span>' + g + '</span>'
+        + '<i class="ti ' + chevronG + '" style="font-size:12px;color:var(--text3);"></i>'
+        + '</div>';
+      if (!gruppeCollapsed) {
+        gruppen[g].sort(function(a, b) { return a.localeCompare(b, 'de'); }).forEach(function(k) {
+          rows += ohgItemRow(k);
+        });
+      }
+    });
+  } else {
+    itemKeys.sort(function(a, b) { return a.localeCompare(b, 'de'); }).forEach(function(k) {
+      rows += ohgItemRow(k);
+    });
+  }
+
+  var sortBtn = sortMode === 'abc' ? 'ABC' : 'Grp';
+  list.innerHTML = '<div class="lager-card">'
+    + '<div class="lager-card-title">'
+    + '<div style="display:flex;align-items:center;gap:8px;"><span style="color:var(--text);">Schuppen OHG</span></div>'
+    + '<div style="display:flex;align-items:center;gap:8px;">'
+    + '<span class="badge">' + itemKeys.length + ' Artikel</span>'
+    + '<button class="lager-delete-btn" onclick="toggleOhgSort()" style="font-size:13px;font-weight:600;color:var(--text3);padding:4px 8px;border:0.5px solid var(--border2);border-radius:4px;background:transparent;">' + sortBtn + '</button>'
+    + '</div></div>'
+    + rows
+    + '</div>';
+}
+
+function ohgItemRow(artikelName) {
+  var item = db.ohg[artikelName];
+  var einheit = getEinheit(artikelName);
+  var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
+  var fotoIcon = getFoto(artikelName) ? 'ti-photo-filled' : 'ti-photo';
+  var safeArtikel = artikelName.replace(/'/g, "\\'");
+  return '<div class="item-row"><span class="item-name">' + artikelName + '</span>'
+    + '<div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span>'
+    + '<button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button>'
+    + '<button class="lager-delete-btn" onclick="askRenameOhgArtikel(\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button>'
+    + '</div></div>';
+}
+
+function toggleOhgSort() {
+  db.ohgSortMode = (db.ohgSortMode === 'abc') ? 'grp' : 'abc';
+  saveDb();
+  renderOhg();
+}
+
+function toggleOhgGruppe(gruppeName) {
+  if (!db.ohgCollapsedGruppen) db.ohgCollapsedGruppen = {};
+  db.ohgCollapsedGruppen[gruppeName] = !db.ohgCollapsedGruppen[gruppeName];
+  saveDb();
+  renderOhg();
+}
+
+function askRenameOhgArtikel(artName) {
+  pendingRename = { ohg: true, altName: artName };
+  document.getElementById('rename-sub').textContent = 'Neuer Name für „' + artName + '" im OHG-Lager';
+  document.getElementById('rename-input').value = artName;
+  document.getElementById('rename-overlay').style.display = 'flex';
+  setTimeout(function() { document.getElementById('rename-input').focus(); }, 100);
+}
+
 var dragSrc = null;
 var touchStartY = 0;
 var draggedElement = null;
@@ -1910,7 +2022,7 @@ async function sendCommand() {
   });
 
   var lagerListe = Object.keys(db.lager);
-  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVorhandene Lagernamen: ' + JSON.stringify(lagerListe) + '\n\nBekannte Einheiten pro Artikel: ' + JSON.stringify(db.einheiten) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges.\n\nEINHEITEN-REGELN:\n- Nur Artikel der Gruppen Alkohol und Softdrink bekommen Einheiten\n- Beim ersten Anlegen eines Alkohol/Softdrink-Artikels: Einheit aus dem Kontext erschließen (z.B. "Havanna Club" → "Flaschen", "Cola" → "Kisten", "Bier" → "Flaschen", "Saft" → "Kartons")\n- Einheit ist GLOBAL pro Artikel (gilt in allen Lagern)\n- Einheit NUR ändern wenn der Nutzer es ausdrücklich befiehlt\n- Einheit NUR setzen wenn sie noch nicht bekannt ist ODER der Nutzer sie ausdrücklich ändert\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME", "einheit": "Flaschen"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "einheit_setzen", "artikel": "ARTIKELNAME", "einheit": "EINHEITNAME"},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "loeschen_lager", "name": "LAGERNAME"},\n    {"typ": "artikel_umbenennen", "lager": "LAGERNAME", "alt": "ALTER_NAME", "neu": "NEUER_NAME"},\n    {"typ": "mindest_setzen", "zone": "ZONENNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "mindest_loeschen", "zone": "ZONENNAME", "artikel": "ARTIKELNAME"},\n    {"typ": "keine"}\n  ]\n}\n\nVordefinierte Zonen für Mindestbestände:\n- "Sahrensdorf" (umfasst nur das Lager Sahrensdorf)\n- "Hinten + Rapa Bar" (umfasst die Lager Hinten und Rapa Bar zusammen)\n\n- Mindestbestände gelten nur für Gruppen Alkohol und Softdrink.\n- Zum Löschen eines Mindestbestands: mindest_loeschen verwenden, NICHT mindest_setzen mit Menge 0.\n- Artikel ohne Mindestbestand werden nicht überwacht.\n\nWICHTIG – Lagernamen-Matching:\nDie Eingabe kommt oft von einer Spracherkennung. Vergleiche Lagernamen IMMER mit vorhandenen und verwende den ähnlichsten. Erstelle nur dann ein neues Lager, wenn kein vorhandener Name passt.\n\nWeitere Regeln:\n- WICHTIG \u2013 Artikelnamen NICHT zusammenf\u00fchren: Artikelnamen EXAKT so \u00fcbernehmen wie genannt. Einen Artikel NUR auf einen vorhandenen mappen, wenn der Name IDENTISCH ist (au\u00dfer Gro\u00df-/Kleinschreibung und klare Tippfehler). Verschiedene Produkte haben oft \u00e4hnliche Namen. Beispiel: \\"Canadian Club\\" und \\"Canadian Club Small Batch\\" sind ZWEI VERSCHIEDENE Artikel \u2013 NIEMALS zusammenf\u00fchren. Sagt der Nutzer \\"Canadian Club\\" und es existiert nur \\"Canadian Club Small Batch\\", dann \\"Canadian Club\\" als NEUEN Artikel anlegen. Im Zweifel neuen Artikel anlegen.\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: Sonstiges verwenden\n- Gruppe aus dem Kontext erschließen\n- Bei Abfragen nur "keine" als Aktion\n- NUR JSON, kein Markdown, keine Backticks';
+  var systemPrompt = 'Du bist der Assistent der App "Lagerfeld", einer Lagerverwaltungs-App. Du erhältst Befehle auf Deutsch.\n\nAktueller Lagerbestand (JSON):\n' + JSON.stringify(dbSummary, null, 2) + '\n\nVorhandene Lagernamen: ' + JSON.stringify(lagerListe) + '\n\nBekannte Einheiten pro Artikel: ' + JSON.stringify(db.einheiten) + '\n\nVerlaufsprotokoll (letzte 20 Einträge):\n' + JSON.stringify(db.log.slice(-20), null, 2) + '\n\nAktuelles Datum/Uhrzeit: ' + new Date().toLocaleString('de-DE') + '\n\nJeder Artikel hat eine Menge (menge) und eine Gruppe (gruppe). Mögliche Gruppen: Werkzeug, Alkohol, Softdrink, Gerät, Lebensmittel, Verbrauchsmaterial, Dekoration, Sonstiges.\n\nEINHEITEN-REGELN:\n- Nur Artikel der Gruppen Alkohol und Softdrink bekommen Einheiten\n- Beim ersten Anlegen eines Alkohol/Softdrink-Artikels: Einheit aus dem Kontext erschließen (z.B. "Havanna Club" → "Flaschen", "Cola" → "Kisten", "Bier" → "Flaschen", "Saft" → "Kartons")\n- Einheit ist GLOBAL pro Artikel (gilt in allen Lagern)\n- Einheit NUR ändern wenn der Nutzer es ausdrücklich befiehlt\n- Einheit NUR setzen wenn sie noch nicht bekannt ist ODER der Nutzer sie ausdrücklich ändert\n\nDu musst IMMER mit einem JSON-Objekt antworten:\n{\n  "antwort": "Deine freundliche deutsche Antwort",\n  "aktionen": [\n    {"typ": "erstelle_lager", "name": "LAGERNAME"},\n    {"typ": "hinzufuegen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME", "einheit": "Flaschen"},\n    {"typ": "entnehmen", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "einheit_setzen", "artikel": "ARTIKELNAME", "einheit": "EINHEITNAME"},\n    {"typ": "gruppe_aendern", "lager": "LAGERNAME", "artikel": "ARTIKELNAME", "gruppe": "NEUE_GRUPPE"},\n    {"typ": "umbenennen", "alt": "ALT", "neu": "NEU"},\n    {"typ": "loeschen_lager", "name": "LAGERNAME"},\n    {"typ": "artikel_umbenennen", "lager": "LAGERNAME", "alt": "ALTER_NAME", "neu": "NEUER_NAME"},\n    {"typ": "mindest_setzen", "zone": "ZONENNAME", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "mindest_loeschen", "zone": "ZONENNAME", "artikel": "ARTIKELNAME"},\n    {"typ": "ohg_hinzufuegen", "artikel": "ARTIKELNAME", "menge": ZAHL, "gruppe": "GRUPPENNAME", "einheit": "Flaschen"},\n    {"typ": "ohg_entnehmen", "artikel": "ARTIKELNAME", "menge": ZAHL},\n    {"typ": "keine"}\n  ]\n}\n\nVIRTUELLES LAGER "Schuppen OHG" (Tab "OHG"):\n- Das OHG-Lager ist ein SEPARATES virtuelles Lager, das NICHT zu den normalen Lagern zählt.\n- Wenn der Nutzer "OHG", "Schuppen OHG" oder "Schuppen" erwähnt, verwende ohg_hinzufuegen / ohg_entnehmen statt der normalen Lager-Aktionen.\n- Das OHG-Lager hat KEINE Mindestbestände und zählt NICHT in Gesamtmengen oder Zonen.\n- Beispiel: "Füge 3 Wodka zur OHG hinzu" verwendet ohg_hinzufuegen.\n\nVordefinierte Zonen für Mindestbestände:\n- "Sahrensdorf" (umfasst nur das Lager Sahrensdorf)\n- "Hinten + Rapa Bar" (umfasst die Lager Hinten und Rapa Bar zusammen)\n\n- Mindestbestände gelten nur für Gruppen Alkohol und Softdrink.\n- Zum Löschen eines Mindestbestands: mindest_loeschen verwenden, NICHT mindest_setzen mit Menge 0.\n- Artikel ohne Mindestbestand werden nicht überwacht.\n\nWICHTIG – Lagernamen-Matching:\nDie Eingabe kommt oft von einer Spracherkennung. Vergleiche Lagernamen IMMER mit vorhandenen und verwende den ähnlichsten. Erstelle nur dann ein neues Lager, wenn kein vorhandener Name passt.\n\nWeitere Regeln:\n- WICHTIG \u2013 Artikelnamen NICHT zusammenf\u00fchren: Artikelnamen EXAKT so \u00fcbernehmen wie genannt. Einen Artikel NUR auf einen vorhandenen mappen, wenn der Name IDENTISCH ist (au\u00dfer Gro\u00df-/Kleinschreibung und klare Tippfehler). Verschiedene Produkte haben oft \u00e4hnliche Namen. Beispiel: \\"Canadian Club\\" und \\"Canadian Club Small Batch\\" sind ZWEI VERSCHIEDENE Artikel \u2013 NIEMALS zusammenf\u00fchren. Sagt der Nutzer \\"Canadian Club\\" und es existiert nur \\"Canadian Club Small Batch\\", dann \\"Canadian Club\\" als NEUEN Artikel anlegen. Im Zweifel neuen Artikel anlegen.\n- Bei unklarer Menge: 1 annehmen\n- Bei unklarer Gruppe: Sonstiges verwenden\n- Gruppe aus dem Kontext erschließen\n- Bei Abfragen nur "keine" als Aktion\n- NUR JSON, kein Markdown, keine Backticks';
 
   try {
     var resp = await fetch(PROXY_URL, {
@@ -2018,6 +2130,24 @@ async function sendCommand() {
           db.mindest[zoneKey][a.artikel] = menge;
           logParts.push('Mindestbestand ' + a.artikel + ' in Zone "' + zoneKey + '": ' + menge);
         }
+      } else if (a.typ === 'ohg_hinzufuegen') {
+        var art = a.artikel, m = Number(a.menge) || 1, g = a.gruppe || 'Sonstiges';
+        if (!db.ohg) db.ohg = {};
+        if (db.ohg[art]) {
+          db.ohg[art].menge += m;
+          if (a.gruppe) db.ohg[art].gruppe = g;
+        } else {
+          db.ohg[art] = { menge: m, gruppe: g };
+        }
+        if (a.einheit && !db.einheiten[art]) setEinheit(art, a.einheit);
+        logParts.push('+' + m + 'x ' + art + ' [' + g + '] → OHG');
+      } else if (a.typ === 'ohg_entnehmen') {
+        var art = a.artikel, m = Number(a.menge) || 1;
+        if (db.ohg && db.ohg[art]) {
+          db.ohg[art].menge = Math.max(0, db.ohg[art].menge - m);
+          if (db.ohg[art].menge === 0) delete db.ohg[art];
+          logParts.push('-' + m + 'x ' + art + ' ← OHG');
+        }
       } else if (a.typ === 'mindest_loeschen') {
         var zoneKey = a.zone;
         var besteZone = null, besteZoneDist = Infinity;
@@ -2042,6 +2172,7 @@ async function sendCommand() {
     saveDb();
     aiResponse.textContent = parsed.antwort || 'Erledigt.';
     if (currentTab === 'lager') renderLager();
+    if (currentTab === 'ohg') renderOhg();
     if (currentTab === 'verlauf') renderLog();
     if (currentTab === 'warnungen') renderWarnungen();
 
