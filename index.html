@@ -339,7 +339,8 @@
         <b style="color:var(--text);">v33</b> Tab „Angebote" – Prospektsuche mit Bestandsabgleich<br>
         <b style="color:var(--text);">v34</b> Artikelnamen werden nicht mehr fälschlich zusammengeführt<br>
         <b style="color:var(--text);">v35</b> Nachfüll-Dialog bei Entnahme aus Rapa Bar (von Hinten auffüllen)<br>
-        <b style="color:var(--text);">v36</b> Virtuelles Lager „Schuppen OHG" als eigener Tab
+        <b style="color:var(--text);">v36</b> Virtuelles Lager „Schuppen OHG" als eigener Tab<br>
+        <b style="color:var(--text);">v37</b> Angebotssuche schonend: eine Kette pro Minute, Fortsetzen im Vordergrund
       </div>
     </div>
   </div>
@@ -981,11 +982,17 @@ function askDeleteAngebot(idx) {
   });
 }
 
+var KETTEN = ['Edeka', 'Netto', 'Lidl', 'Aldi', 'Rewe', 'famila'];
+var PAUSE_SEKUNDEN = 60;
+var angeboteSuchLauft = false;
+var angeboteSuchState = null; // { ketteIndex, artikelNamen, wartetBis }
+var angeboteResumeTimer = null;
+
 async function sucheAngebote() {
-  var status = document.getElementById('angebote-status');
-  var btn = document.getElementById('angebote-such-btn');
   var apiKey = getApiKey();
+  var status = document.getElementById('angebote-status');
   if (!apiKey) { status.textContent = 'Bitte erst API-Schlüssel in den Einstellungen eintragen.'; return; }
+  if (angeboteSuchLauft) return;
 
   var relevant = getRelevanteArtikel();
   if (!relevant.length) {
@@ -993,54 +1000,135 @@ async function sucheAngebote() {
     return;
   }
 
-  btn.disabled = true;
-  btn.style.opacity = '0.6';
-  status.textContent = 'Durchsuche Prospekte von Edeka, Netto, Lidl, Aldi, Rewe und famila…';
+  // Neue Suche starten: vorhandene Angebote leeren
+  db.angebote = [];
+  saveDb();
+  renderAngebote();
 
-  var artikelNamen = relevant.map(function(r) { return r.artikel; });
+  angeboteSuchState = {
+    ketteIndex: 0,
+    artikelNamen: relevant.map(function(r) { return r.artikel; })
+  };
+  angeboteSuchLauft = true;
+  setAngeboteBtnState(true);
+  verarbeiteNaechsteKette();
+}
+
+function setAngeboteBtnState(running) {
+  var btn = document.getElementById('angebote-such-btn');
+  if (!btn) return;
+  btn.disabled = running;
+  btn.style.opacity = running ? '0.6' : '1';
+  btn.innerHTML = running
+    ? '<i class="ti ti-loader"></i> Suche läuft…'
+    : '<i class="ti ti-search"></i> Angebote suchen';
+}
+
+async function verarbeiteNaechsteKette() {
+  if (!angeboteSuchState) return;
+  var st = angeboteSuchState;
+  var status = document.getElementById('angebote-status');
+
+  if (st.ketteIndex >= KETTEN.length) {
+    // Fertig
+    angeboteSuchLauft = false;
+    angeboteSuchState = null;
+    setAngeboteBtnState(false);
+    var n = (db.angebote || []).length;
+    status.textContent = n ? '✓ Suche abgeschlossen – ' + n + ' Angebot(e) gefunden.' : '✓ Suche abgeschlossen – keine passenden Angebote.';
+    return;
+  }
+
+  var kette = KETTEN[st.ketteIndex];
+  status.textContent = 'Durchsuche ' + kette + '… (' + (st.ketteIndex + 1) + '/' + KETTEN.length + ')';
 
   try {
+    var apiKey = getApiKey();
     var resp = await fetch(PROXY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 2000,
+        max_tokens: 1500,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{
           role: 'user',
-          content: 'Suche aktuelle Prospekt-Angebote der kommenden Woche bei diesen Ketten: Edeka, Netto, Lidl, Aldi, Rewe, famila.\n\n'
+          content: 'Suche aktuelle Prospekt-Angebote der Supermarktkette "' + kette + '" für die kommende Woche.\n\n'
             + 'Ich suche gezielt nach Angeboten für folgende Produkte (oder sehr ähnliche):\n'
-            + artikelNamen.join(', ') + '\n\n'
-            + 'Gib mir NUR Treffer, die wirklich zu einem dieser Produkte passen. Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
-            + '[{"artikel":"mein Produktname","haendler":"Kette","angebot":"Produktbeschreibung im Prospekt","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
+            + st.artikelNamen.join(', ') + '\n\n'
+            + 'Gib mir NUR Treffer, die wirklich zu einem dieser Produkte passen und wirklich bei ' + kette + ' im Angebot sind. '
+            + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
+            + '[{"artikel":"mein Produktname","haendler":"' + kette + '","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
             + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.'
         }]
       })
     });
     var data = await resp.json();
-    var text = (data.content || []).map(function(b) { return b.text || ''; }).join('\n');
 
-    // JSON-Array aus der Antwort extrahieren
-    var match = text.match(/\[[\s\S]*\]/);
-    if (match) {
-      var gefunden = JSON.parse(match[0]);
-      db.angebote = gefunden;
-      saveDb();
-      renderAngebote();
-      status.textContent = gefunden.length
-        ? '✓ ' + gefunden.length + ' Angebot(e) gefunden.'
-        : 'Keine passenden Angebote in den aktuellen Prospekten gefunden.';
+    if (!resp.ok) {
+      // Rate-Limit: länger warten und dieselbe Kette erneut versuchen
+      if (resp.status === 429) {
+        status.textContent = 'Limit erreicht – warte 90 Sekunden und versuche ' + kette + ' erneut…';
+        planeFortsetzung(90, false);
+        return;
+      }
+      status.textContent = 'Fehler bei ' + kette + ' (' + resp.status + '), überspringe…';
     } else {
-      status.textContent = 'Keine Angebote gefunden.';
+      var text = (data.content || []).map(function(b) { return b.text || ''; }).join('\n');
+      var match = text.match(/\[[\s\S]*\]/);
+      if (match) {
+        try {
+          var gefunden = JSON.parse(match[0]);
+          if (gefunden.length) {
+            db.angebote = (db.angebote || []).concat(gefunden);
+            saveDb();
+            renderAngebote();
+          }
+        } catch(e) {}
+      }
     }
   } catch(e) {
-    status.textContent = 'Fehler bei der Suche: ' + e.message;
-  } finally {
-    btn.disabled = false;
-    btn.style.opacity = '1';
+    status.textContent = 'Fehler bei ' + KETTEN[st.ketteIndex] + ': ' + e.message + ' – mache weiter…';
+  }
+
+  // Nächste Kette nach Pause
+  st.ketteIndex++;
+  if (st.ketteIndex < KETTEN.length) {
+    planeFortsetzung(PAUSE_SEKUNDEN, true);
+  } else {
+    verarbeiteNaechsteKette();
   }
 }
+
+function planeFortsetzung(sekunden, naechste) {
+  if (!angeboteSuchState) return;
+  angeboteSuchState.wartetBis = Date.now() + sekunden * 1000;
+  var status = document.getElementById('angebote-status');
+  var basisText = status.textContent;
+
+  clearTimeout(angeboteResumeTimer);
+  function tick() {
+    if (!angeboteSuchState) return;
+    var rest = Math.ceil((angeboteSuchState.wartetBis - Date.now()) / 1000);
+    if (rest > 0) {
+      var naechsteKette = angeboteSuchState.ketteIndex < KETTEN.length ? KETTEN[angeboteSuchState.ketteIndex] : '';
+      status.textContent = 'Pause… nächste Suche (' + naechsteKette + ') in ' + rest + 's';
+      angeboteResumeTimer = setTimeout(tick, 1000);
+    } else {
+      verarbeiteNaechsteKette();
+    }
+  }
+  tick();
+}
+
+// Beim Zurückkehren in den Vordergrund: Suche fortsetzen falls fällig
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible' && angeboteSuchState) {
+    if (angeboteSuchState.wartetBis && Date.now() >= angeboteSuchState.wartetBis) {
+      verarbeiteNaechsteKette();
+    }
+  }
+});
 
 var recognition = null;
 // Crop Editor mit Cropper.js
