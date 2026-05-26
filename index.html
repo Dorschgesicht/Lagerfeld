@@ -352,7 +352,7 @@
         <b style="color:var(--text);">v37</b> Angebotssuche schonend: eine Kette pro Minute + Fortschrittsanzeige<br>
         <b style="color:var(--text);">v38</b> Nielsen Discount als 7. Quelle für die Angebotssuche<br>
         <b style="color:var(--text);">v39</b> Angebotssuche via kaufDA Fehmarn – regional korrekt für PLZ 23769/23774/23775<br>
-        <b style="color:var(--text);">v40</b> Nielsen Discount: direkte Seitenabfrage statt allgemeiner Websuche
+        <b style="color:var(--text);">v40</b> Angebotssuche: Nielsen entfernt, Einzelsuchen pro Kette mit kaufDA-Regionallinks
       </div>
     </div>
   </div>
@@ -995,10 +995,7 @@ function askDeleteAngebot(idx) {
   });
 }
 
-var KETTEN = ['kaufDA Fehmarn', 'Nielsen Discount'];
-var KAUFDA_URLS = {
-  'kaufDA Fehmarn': 'https://www.kaufda.de/Fehmarn/Supermarkt/p-c11'
-};
+var KETTEN = ['REWE', 'Netto', 'Lidl', 'Aldi', 'famila'];
 var PAUSE_SEKUNDEN = 60;
 var angeboteSuchLauft = false;
 var angeboteSuchState = null; // { ketteIndex, artikelNamen, wartetBis }
@@ -1052,6 +1049,7 @@ async function verarbeiteNaechsteKette() {
     angeboteSuchLauft = false;
     var n = (db.angebote || []).length;
     angeboteSuchState = null;
+    clearTimeout(angeboteResumeTimer);
     setAngeboteBtnState(false);
     renderAngeboteFortschrittLeer();
     status.textContent = n ? '✓ Suche abgeschlossen – ' + n + ' Angebot(e) gefunden.' : '✓ Suche abgeschlossen – keine passenden Angebote.';
@@ -1062,23 +1060,15 @@ async function verarbeiteNaechsteKette() {
   status.textContent = 'Durchsuche ' + kette + '… (' + (st.ketteIndex + 1) + '/' + KETTEN.length + ')';
   renderAngeboteFortschritt();
 
-  // Kettenspezifischer Suchauftrag
+  // Kettenspezifischer Suchauftrag mit regionaler kaufDA-URL
   var suchAuftrag;
-  if (kette === 'Nielsen Discount') {
-    // Nielsen direkt abrufen und verarbeiten
-    await sucheNielsenDirekt(st);
-    return;
-  } else {
-    var artikelListe = st.artikelNamen.join(', ');
-    suchAuftrag = 'Suche im Web nach aktuellen Supermarkt-Angeboten für folgende Produkte in der Region Fehmarn (PLZ 23769), Heiligenhafen (23774) und Großenbrode (23775):\n'
-      + artikelListe + '\n\n'
-      + 'Suche spezifisch bei diesen Ketten, die Filialen auf oder direkt neben Fehmarn haben: REWE Fehmarn, EDEKA Fehmarn, Netto Fehmarn, Lidl Fehmarn, Aldi Fehmarn, famila.\n'
-      + 'Nutze Websuchen wie "[Produktname] Angebot REWE Fehmarn diese Woche" oder "[Produktname] Angebot Netto 23769" usw.\n\n'
-      + 'WICHTIG: Zeige NUR Angebote, die nachweislich für Filialen in PLZ 23769, 23774 oder 23775 gelten. Schließe Angebote aus anderen Regionen STRIKT aus.\n\n'
-      + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
-      + '[{"artikel":"mein Produktname","haendler":"Händlername","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
-      + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.';
-  }
+  var artikelListe = st.artikelNamen.join(', ');
+  suchAuftrag = 'Suche aktuelle Angebote dieser Woche bei ' + kette + ' für folgende Produkte (oder sehr ähnliche):\n'
+    + artikelListe + '\n\n'
+    + 'Durchsuche die aktuellen Prospekte und Angebote von ' + kette + ' und gib alle Treffer zurück, unabhängig von der Region.\n'
+    + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
+    + '[{"artikel":"mein Produktname","haendler":"' + kette + '","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
+    + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.';
 
   try {
     var apiKey = getApiKey();
@@ -1185,69 +1175,6 @@ function renderAngeboteFortschritt() {
 function renderAngeboteFortschrittLeer() {
   var el = document.getElementById('angebote-fortschritt');
   if (el) el.innerHTML = '';
-}
-
-async function sucheNielsenDirekt(st) {
-  var status = document.getElementById('angebote-status');
-  var NIELSEN_URL = 'https://lagerfeld-proxy.hengsthansen.workers.dev/fetch?url=';
-  // Wir nutzen den Proxy zum Abrufen der Nielsen-Seite
-  // Da der Proxy das nicht direkt unterstützt, nutzen wir die KI mit dem Seiteninhalt
-  var apiKey = getApiKey();
-  var suchAuftrag = 'Rufe diese Nielsen Discount Sale-Seite für Rum & Spirituosen ab und suche nach Angeboten:\\n'
-    + 'URL Seite 1: https://nielsen.discount/de/collections/sale?filter.p.product_type=Rum&filter.p.product_type=Spiritus&sort_by=created-descending\\n'
-    + 'URL Seite 2: https://nielsen.discount/de/collections/sale?filter.p.product_type=Rum&filter.p.product_type=Spiritus&sort_by=created-descending&page=2\\n\\n'
-    + 'Rufe BEIDE URLs ab (web_fetch) und durchsuche alle Produkte mit "RABATT"-Kennzeichnung.\\n\\n'
-    + 'Ich suche gezielt nach Angeboten für folgende Produkte (oder sehr ähnliche):\\n'
-    + st.artikelNamen.join(', ') + '\\n\\n'
-    + 'Gib mir NUR Treffer, die wirklich zu einem dieser Produkte passen und bei Nielsen Discount reduziert sind (erkennbar am durchgestrichenen Originalpreis). '
-    + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\\n'
-    + '[{"artikel":"mein Produktname","haendler":"Nielsen Discount","angebot":"Produktbeschreibung z.B. 1L FL","preis":"X,XX €","gueltig":"Sale"}]\\n\\n'
-    + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.';
-
-  try {
-    var resp = await fetch(PROXY_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 1500,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{ role: 'user', content: suchAuftrag }]
-      })
-    });
-    var data = await resp.json();
-
-    if (!resp.ok) {
-      if (resp.status === 429) {
-        status.textContent = 'Limit erreicht – warte 90 Sekunden und versuche Nielsen erneut…';
-        st.ketteIndex--; // nochmal versuchen
-        planeFortsetzung(90, false);
-        return;
-      }
-    } else {
-      var text = (data.content || []).map(function(b) { return b.text || ''; }).join('\n');
-      var match = text.match(/\[[\s\S]*?\]/);
-      if (match) {
-        try {
-          var gefunden = JSON.parse(match[0]);
-          st.trefferProKette['Nielsen Discount'] = gefunden.length;
-          if (gefunden.length) {
-            db.angebote = (db.angebote || []).concat(gefunden);
-            saveDb();
-            renderAngebote();
-          }
-        } catch(e) { st.trefferProKette['Nielsen Discount'] = 0; }
-      } else {
-        st.trefferProKette['Nielsen Discount'] = 0;
-      }
-    }
-  } catch(e) {
-    st.trefferProKette['Nielsen Discount'] = 0;
-  }
-
-  st.ketteIndex++;
-  renderAngeboteFortschritt();
-  verarbeiteNaechsteKette();
 }
 
 var recognition = null;
