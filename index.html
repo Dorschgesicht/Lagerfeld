@@ -226,6 +226,15 @@
     border: 0.5px solid var(--border2); border-radius: var(--radius-sm);
     padding: 12px; margin-bottom: 10px; background: var(--surface);
   }
+  .fortschritt-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    border-radius: var(--radius-sm); margin-bottom: 6px; font-size: 14px;
+    background: var(--surface); border: 0.5px solid var(--border);
+  }
+  .fortschritt-row .fs-icon { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
+  .fortschritt-row.done { color: var(--text2); }
+  .fortschritt-row.active { border-color: var(--text); font-weight: 600; }
+  .fortschritt-row.wait { color: var(--text3); }
   .angebot-card-head {
     display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
   }
@@ -340,7 +349,9 @@
         <b style="color:var(--text);">v34</b> Artikelnamen werden nicht mehr fälschlich zusammengeführt<br>
         <b style="color:var(--text);">v35</b> Nachfüll-Dialog bei Entnahme aus Rapa Bar (von Hinten auffüllen)<br>
         <b style="color:var(--text);">v36</b> Virtuelles Lager „Schuppen OHG" als eigener Tab<br>
-        <b style="color:var(--text);">v37</b> Angebotssuche schonend: eine Kette pro Minute, Fortsetzen im Vordergrund
+        <b style="color:var(--text);">v37</b> Angebotssuche schonend: eine Kette pro Minute + Fortschrittsanzeige<br>
+        <b style="color:var(--text);">v38</b> Nielsen Discount als 7. Quelle für die Angebotssuche<br>
+        <b style="color:var(--text);">v39</b> Angebotssuche via kaufDA Fehmarn – regional korrekt für PLZ 23769/23774/23775
       </div>
     </div>
   </div>
@@ -471,6 +482,7 @@
       <i class="ti ti-search"></i> Angebote suchen
     </button>
     <div id="angebote-status" style="font-size:13px;color:var(--text2);margin-bottom:12px;text-align:center;"></div>
+    <div id="angebote-fortschritt" style="margin-bottom:16px;"></div>
     <div id="angebote-list"></div>
     <div id="angebote-empty" class="empty-state" style="display:none;">
       <i class="ti ti-tag"></i>Noch keine Angebote gefunden. Tippe auf „Angebote suchen".
@@ -982,7 +994,10 @@ function askDeleteAngebot(idx) {
   });
 }
 
-var KETTEN = ['Edeka', 'Netto', 'Lidl', 'Aldi', 'Rewe', 'famila'];
+var KETTEN = ['kaufDA Fehmarn', 'Nielsen Discount'];
+var KAUFDA_URLS = {
+  'kaufDA Fehmarn': 'https://www.kaufda.de/Fehmarn/Supermarkt/p-c11'
+};
 var PAUSE_SEKUNDEN = 60;
 var angeboteSuchLauft = false;
 var angeboteSuchState = null; // { ketteIndex, artikelNamen, wartetBis }
@@ -1007,10 +1022,12 @@ async function sucheAngebote() {
 
   angeboteSuchState = {
     ketteIndex: 0,
-    artikelNamen: relevant.map(function(r) { return r.artikel; })
+    artikelNamen: relevant.map(function(r) { return r.artikel; }),
+    trefferProKette: {}
   };
   angeboteSuchLauft = true;
   setAngeboteBtnState(true);
+  renderAngeboteFortschritt();
   verarbeiteNaechsteKette();
 }
 
@@ -1032,15 +1049,42 @@ async function verarbeiteNaechsteKette() {
   if (st.ketteIndex >= KETTEN.length) {
     // Fertig
     angeboteSuchLauft = false;
+    var n = (db.angebote || []).length;
     angeboteSuchState = null;
     setAngeboteBtnState(false);
-    var n = (db.angebote || []).length;
+    renderAngeboteFortschrittLeer();
     status.textContent = n ? '✓ Suche abgeschlossen – ' + n + ' Angebot(e) gefunden.' : '✓ Suche abgeschlossen – keine passenden Angebote.';
     return;
   }
 
   var kette = KETTEN[st.ketteIndex];
   status.textContent = 'Durchsuche ' + kette + '… (' + (st.ketteIndex + 1) + '/' + KETTEN.length + ')';
+  renderAngeboteFortschritt();
+
+  // Kettenspezifischer Suchauftrag
+  var suchAuftrag;
+  if (kette === 'Nielsen Discount') {
+    suchAuftrag = 'Durchsuche den Spirituosen-Onlineshop Nielsen Discount (nielsen.discount) nach reduzierten Angeboten im Sale-Bereich.\n\n'
+      + 'Sale-Seite: https://nielsen.discount/de/collections/sale\n\n'
+      + 'Hinweis: Nielsen Discount ist ein Onlineshop – hier gibt es keine regionalen Einschränkungen, da bundesweiter Versand.\n\n'
+      + 'Ich suche gezielt nach reduzierten Angeboten für folgende Produkte (oder sehr ähnliche):\n'
+      + st.artikelNamen.join(', ') + '\n\n'
+      + 'Gib mir NUR Treffer, die wirklich zu einem dieser Produkte passen und bei Nielsen Discount reduziert sind. '
+      + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
+      + '[{"artikel":"mein Produktname","haendler":"Nielsen Discount","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Sale"}]\n\n'
+      + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.';
+  } else {
+    suchAuftrag = 'Durchsuche die kaufDA-Prospektseite für Fehmarn und Umgebung nach aktuellen Supermarkt-Angeboten.\n\n'
+      + 'URL: https://www.kaufda.de/Fehmarn/Supermarkt/p-c11\n\n'
+      + 'Diese Seite zeigt die aktuellen lokalen Prospekte der Supermärkte in Fehmarn (PLZ 23769), Heiligenhafen (23774) und Großenbrode (23775).\n\n'
+      + 'Ich suche gezielt nach Angeboten für folgende Produkte (oder sehr ähnliche):\n'
+      + st.artikelNamen.join(', ') + '\n\n'
+      + 'Gib mir NUR Treffer, die wirklich zu einem dieser Produkte passen und wirklich in einem lokalen Supermarkt auf Fehmarn oder in der direkten Umgebung im Angebot sind. '
+      + 'Gib bei jedem Treffer den Händlernamen (z.B. REWE, Edeka, Netto, Lidl, Aldi, famila) an. '
+      + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
+      + '[{"artikel":"mein Produktname","haendler":"Händlername","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
+      + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.';
+  }
 
   try {
     var apiKey = getApiKey();
@@ -1053,13 +1097,7 @@ async function verarbeiteNaechsteKette() {
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         messages: [{
           role: 'user',
-          content: 'Suche aktuelle Prospekt-Angebote der Supermarktkette "' + kette + '" für die kommende Woche.\n\n'
-            + 'Ich suche gezielt nach Angeboten für folgende Produkte (oder sehr ähnliche):\n'
-            + st.artikelNamen.join(', ') + '\n\n'
-            + 'Gib mir NUR Treffer, die wirklich zu einem dieser Produkte passen und wirklich bei ' + kette + ' im Angebot sind. '
-            + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
-            + '[{"artikel":"mein Produktname","haendler":"' + kette + '","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
-            + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.'
+          content: suchAuftrag
         }]
       })
     });
@@ -1079,12 +1117,15 @@ async function verarbeiteNaechsteKette() {
       if (match) {
         try {
           var gefunden = JSON.parse(match[0]);
+          st.trefferProKette[kette] = gefunden.length;
           if (gefunden.length) {
             db.angebote = (db.angebote || []).concat(gefunden);
             saveDb();
             renderAngebote();
           }
-        } catch(e) {}
+        } catch(e) { st.trefferProKette[kette] = 0; }
+      } else {
+        st.trefferProKette[kette] = 0;
       }
     }
   } catch(e) {
@@ -1093,6 +1134,7 @@ async function verarbeiteNaechsteKette() {
 
   // Nächste Kette nach Pause
   st.ketteIndex++;
+  renderAngeboteFortschritt();
   if (st.ketteIndex < KETTEN.length) {
     planeFortsetzung(PAUSE_SEKUNDEN, true);
   } else {
@@ -1129,6 +1171,27 @@ document.addEventListener('visibilitychange', function() {
     }
   }
 });
+
+function renderAngeboteFortschritt() {
+  var el = document.getElementById('angebote-fortschritt');
+  if (!el) return;
+  if (!angeboteSuchState) { el.innerHTML = ''; return; }
+  var st = angeboteSuchState;
+  el.innerHTML = KETTEN.map(function(kette, i) {
+    var cls, icon;
+    if (i < st.ketteIndex) { cls = 'done'; icon = '<i class="ti ti-circle-check" style="color:var(--text);"></i>'; }
+    else if (i === st.ketteIndex) { cls = 'active'; icon = '<i class="ti ti-loader-2"></i>'; }
+    else { cls = 'wait'; icon = '<i class="ti ti-circle-dotted"></i>'; }
+    var treffer = (st.trefferProKette && st.trefferProKette[kette] !== undefined)
+      ? ' · ' + st.trefferProKette[kette] + ' Treffer' : '';
+    return '<div class="fortschritt-row ' + cls + '"><span class="fs-icon">' + icon + '</span><span>' + kette + treffer + '</span></div>';
+  }).join('');
+}
+
+function renderAngeboteFortschrittLeer() {
+  var el = document.getElementById('angebote-fortschritt');
+  if (el) el.innerHTML = '';
+}
 
 var recognition = null;
 // Crop Editor mit Cropper.js
