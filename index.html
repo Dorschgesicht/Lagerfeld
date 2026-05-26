@@ -1001,7 +1001,7 @@ function askDeleteAngebot(idx) {
 }
 
 var KETTEN = ['REWE', 'Edeka', 'Netto', 'Lidl', 'Aldi', 'famila'];
-var PAUSE_SEKUNDEN = 30;
+var PAUSE_SEKUNDEN = 0;
 var angeboteSuchLauft = false;
 var angeboteSuchState = null;
 var angeboteResumeTimer = null;
@@ -1145,7 +1145,11 @@ async function verarbeiteNaechstenArtikel() {
   st.artikelIndex++;
   renderAngeboteFortschritt();
   if (st.artikelIndex < st.artikel.length) {
-    planeFortsetzung(PAUSE_SEKUNDEN);
+    if (PAUSE_SEKUNDEN > 0) {
+      planeFortsetzung(PAUSE_SEKUNDEN);
+    } else {
+      verarbeiteNaechstenArtikel();
+    }
   } else {
     verarbeiteNaechstenArtikel();
   }
