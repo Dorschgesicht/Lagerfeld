@@ -353,7 +353,11 @@
         <b style="color:var(--text);">v38</b> Nielsen Discount als 7. Quelle für die Angebotssuche<br>
         <b style="color:var(--text);">v39</b> Angebotssuche via kaufDA Fehmarn – regional korrekt für PLZ 23769/23774/23775<br>
         <b style="color:var(--text);">v40</b> Angebotssuche: Nielsen entfernt, Einzelsuchen pro Kette mit kaufDA-Regionallinks<br>
-        <b style="color:var(--text);">v41</b> Edeka aus Angebotssuche entfernt (regionale Franchise-Problematik)
+        <b style="color:var(--text);">v41</b> Edeka aus Angebotssuche entfernt (regionale Franchise-Problematik)<br>
+        <b style="color:var(--text);">v42</b> Angebotssuche via marktguru.de – direkte URL pro Artikel und Kette<br>
+        <b style="color:var(--text);">v43</b> marktguru: direkte web_fetch statt Websuche, Artikel-Slugs automatisch generiert<br>
+        <b style="color:var(--text);">v44</b> Angebotssuche: Iteration pro Artikel statt pro Kette, marktguru.de/b/[slug]<br>
+        <b style="color:var(--text);">v45</b> Edeka wieder in Angebotssuche aufgenommen
       </div>
     </div>
   </div>
@@ -996,11 +1000,28 @@ function askDeleteAngebot(idx) {
   });
 }
 
-var KETTEN = ['REWE', 'Netto', 'Lidl', 'Aldi', 'famila'];
-var PAUSE_SEKUNDEN = 60;
+var KETTEN = ['REWE', 'Edeka', 'Netto', 'Lidl', 'Aldi', 'famila'];
+var PAUSE_SEKUNDEN = 30;
 var angeboteSuchLauft = false;
-var angeboteSuchState = null; // { ketteIndex, artikelNamen, wartetBis }
+var angeboteSuchState = null;
 var angeboteResumeTimer = null;
+
+function getRelevanteArtikel() {
+  var relevant = [];
+  Object.keys(db.mindest).forEach(function(zone) {
+    Object.keys(db.mindest[zone]).forEach(function(art) {
+      var min = db.mindest[zone][art];
+      var ist = getZoneMenge(zone, art);
+      if (ist <= 2 * min) {
+        // Deduplizieren
+        if (!relevant.find(function(r){ return r.artikel === art; })) {
+          relevant.push({ artikel: art, zone: zone, ist: ist, min: min });
+        }
+      }
+    });
+  });
+  return relevant;
+}
 
 async function sucheAngebote() {
   var apiKey = getApiKey();
@@ -1014,20 +1035,19 @@ async function sucheAngebote() {
     return;
   }
 
-  // Neue Suche starten: vorhandene Angebote leeren
   db.angebote = [];
   saveDb();
   renderAngebote();
 
   angeboteSuchState = {
-    ketteIndex: 0,
-    artikelNamen: relevant.map(function(r) { return r.artikel; }),
-    trefferProKette: {}
+    artikelIndex: 0,
+    artikel: relevant,
+    trefferProArtikel: {}
   };
   angeboteSuchLauft = true;
   setAngeboteBtnState(true);
   renderAngeboteFortschritt();
-  verarbeiteNaechsteKette();
+  verarbeiteNaechstenArtikel();
 }
 
 function setAngeboteBtnState(running) {
@@ -1040,12 +1060,12 @@ function setAngeboteBtnState(running) {
     : '<i class="ti ti-search"></i> Angebote suchen';
 }
 
-async function verarbeiteNaechsteKette() {
+async function verarbeiteNaechstenArtikel() {
   if (!angeboteSuchState) return;
   var st = angeboteSuchState;
   var status = document.getElementById('angebote-status');
 
-  if (st.ketteIndex >= KETTEN.length) {
+  if (st.artikelIndex >= st.artikel.length) {
     // Fertig
     angeboteSuchLauft = false;
     var n = (db.angebote || []).length;
@@ -1057,21 +1077,28 @@ async function verarbeiteNaechsteKette() {
     return;
   }
 
-  var kette = KETTEN[st.ketteIndex];
-  status.textContent = 'Durchsuche ' + kette + '… (' + (st.ketteIndex + 1) + '/' + KETTEN.length + ')';
+  var eintrag = st.artikel[st.artikelIndex];
+  var artikelName = eintrag.artikel;
+  status.textContent = 'Suche Angebote für ' + artikelName + '… (' + (st.artikelIndex + 1) + '/' + st.artikel.length + ')';
   renderAngeboteFortschritt();
 
-  // Kettenspezifischer Suchauftrag mit regionaler kaufDA-URL
-  var suchAuftrag;
-  var artikelListe = st.artikelNamen.join(', ');
-  suchAuftrag = 'Suche auf kaufda.de/Geschaefte/' + kette.replace(' ', '-') + ' alle aktuellen Spirituosen- und Alkohol-Angebote dieser Woche.\n'
-    + 'Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '. Suche nur Angebote die ab heute gültig sind.\n\n'
-    + 'Prüfe dann, welche dieser Angebote zu folgenden Produkten (oder sehr ähnlichen) passen:\n'
-    + artikelListe + '\n\n'
-    + 'Gib NUR Treffer zurück, die wirklich zu einem dieser Produkte passen.\n'
-    + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
-    + '[{"artikel":"mein Produktname","haendler":"' + kette + '","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
-    + 'Wenn du nichts Passendes findest, antworte mit einem leeren Array [].';
+  // marktguru-Slug aus Artikelnamen generieren
+  var slug = artikelName.toLowerCase()
+    .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  var url = 'https://www.marktguru.de/b/' + slug;
+  var heute = new Date().toLocaleDateString('de-DE');
+  var kettenListe = KETTEN.join(', ');
+
+  var suchAuftrag = 'WICHTIG: Nutze AUSSCHLIESSLICH web_fetch \u2013 KEINE Websuche!\n\n'
+    + 'Rufe folgende URL direkt ab (web_fetch):\n'
+    + url + '\n\n'
+    + 'Suche auf dieser Seite nach aktuell g\u00fcltigen Angeboten (kein "Leider verpasst").\n'
+    + 'Zeige NUR Angebote bei folgenden H\u00e4ndlern: ' + kettenListe + '\n'
+    + 'Heutiges Datum: ' + heute + '\n\n'
+    + 'Antworte mit einem JSON-Array (in einem Codeblock):\n'
+    + '[{"artikel":"' + artikelName + '","haendler":"H\u00e4ndlername","angebot":"Produktbeschreibung","preis":"X,XX \u20ac","gueltig":"Zeitraum"}]\n'
+    + 'Wenn nichts gefunden, antworte mit leerem Array [].';
 
   try {
     var apiKey = getApiKey();
@@ -1080,81 +1107,74 @@ async function verarbeiteNaechsteKette() {
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-5-20250929',
-        max_tokens: 1500,
+        max_tokens: 1000,
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{
-          role: 'user',
-          content: suchAuftrag
-        }]
+        messages: [{ role: 'user', content: suchAuftrag }]
       })
     });
     var data = await resp.json();
 
     if (!resp.ok) {
-      // Rate-Limit: länger warten und dieselbe Kette erneut versuchen
       if (resp.status === 429) {
-        status.textContent = 'Limit erreicht – warte 90 Sekunden und versuche ' + kette + ' erneut…';
-        planeFortsetzung(90, false);
+        status.textContent = 'Limit erreicht – warte 90 Sekunden und versuche ' + artikelName + ' erneut…';
+        planeFortsetzung(90);
         return;
       }
-      status.textContent = 'Fehler bei ' + kette + ' (' + resp.status + '), überspringe…';
+      st.trefferProArtikel[artikelName] = 0;
     } else {
       var text = (data.content || []).map(function(b) { return b.text || ''; }).join('\n');
-      var match = text.match(/\[[\s\S]*\]/);
+      var match = text.match(/\[[\s\S]*?\]/);
       if (match) {
         try {
           var gefunden = JSON.parse(match[0]);
-          st.trefferProKette[kette] = gefunden.length;
+          st.trefferProArtikel[artikelName] = gefunden.length;
           if (gefunden.length) {
             db.angebote = (db.angebote || []).concat(gefunden);
             saveDb();
             renderAngebote();
           }
-        } catch(e) { st.trefferProKette[kette] = 0; }
+        } catch(e) { st.trefferProArtikel[artikelName] = 0; }
       } else {
-        st.trefferProKette[kette] = 0;
+        st.trefferProArtikel[artikelName] = 0;
       }
     }
   } catch(e) {
-    status.textContent = 'Fehler bei ' + KETTEN[st.ketteIndex] + ': ' + e.message + ' – mache weiter…';
+    st.trefferProArtikel[artikelName] = 0;
   }
 
-  // Nächste Kette nach Pause
-  st.ketteIndex++;
+  st.artikelIndex++;
   renderAngeboteFortschritt();
-  if (st.ketteIndex < KETTEN.length) {
-    planeFortsetzung(PAUSE_SEKUNDEN, true);
+  if (st.artikelIndex < st.artikel.length) {
+    planeFortsetzung(PAUSE_SEKUNDEN);
   } else {
-    verarbeiteNaechsteKette();
+    verarbeiteNaechstenArtikel();
   }
 }
 
-function planeFortsetzung(sekunden, naechste) {
+function planeFortsetzung(sekunden) {
   if (!angeboteSuchState) return;
   angeboteSuchState.wartetBis = Date.now() + sekunden * 1000;
   var status = document.getElementById('angebote-status');
-  var basisText = status.textContent;
-
   clearTimeout(angeboteResumeTimer);
   function tick() {
     if (!angeboteSuchState) return;
     var rest = Math.ceil((angeboteSuchState.wartetBis - Date.now()) / 1000);
     if (rest > 0) {
-      var naechsteKette = angeboteSuchState.ketteIndex < KETTEN.length ? KETTEN[angeboteSuchState.ketteIndex] : '';
-      status.textContent = 'Pause… nächste Suche (' + naechsteKette + ') in ' + rest + 's';
+      var naechster = angeboteSuchState.artikelIndex < angeboteSuchState.artikel.length
+        ? angeboteSuchState.artikel[angeboteSuchState.artikelIndex].artikel : '';
+      status.textContent = 'Pause… nächste Suche (' + naechster + ') in ' + rest + 's';
       angeboteResumeTimer = setTimeout(tick, 1000);
     } else {
-      verarbeiteNaechsteKette();
+      verarbeiteNaechstenArtikel();
     }
   }
   tick();
 }
 
-// Beim Zurückkehren in den Vordergrund: Suche fortsetzen falls fällig
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'visible' && angeboteSuchState) {
     if (angeboteSuchState.wartetBis && Date.now() >= angeboteSuchState.wartetBis) {
-      verarbeiteNaechsteKette();
+      verarbeiteNaechstenArtikel();
     }
   }
 });
@@ -1164,14 +1184,15 @@ function renderAngeboteFortschritt() {
   if (!el) return;
   if (!angeboteSuchState) { el.innerHTML = ''; return; }
   var st = angeboteSuchState;
-  el.innerHTML = KETTEN.map(function(kette, i) {
+  el.innerHTML = st.artikel.map(function(eintrag, i) {
+    var name = eintrag.artikel;
     var cls, icon;
-    if (i < st.ketteIndex) { cls = 'done'; icon = '<i class="ti ti-circle-check" style="color:var(--text);"></i>'; }
-    else if (i === st.ketteIndex) { cls = 'active'; icon = '<i class="ti ti-loader-2"></i>'; }
+    if (i < st.artikelIndex) { cls = 'done'; icon = '<i class="ti ti-circle-check" style="color:var(--text);"></i>'; }
+    else if (i === st.artikelIndex) { cls = 'active'; icon = '<i class="ti ti-loader-2"></i>'; }
     else { cls = 'wait'; icon = '<i class="ti ti-circle-dotted"></i>'; }
-    var treffer = (st.trefferProKette && st.trefferProKette[kette] !== undefined)
-      ? ' · ' + st.trefferProKette[kette] + ' Treffer' : '';
-    return '<div class="fortschritt-row ' + cls + '"><span class="fs-icon">' + icon + '</span><span>' + kette + treffer + '</span></div>';
+    var treffer = (st.trefferProArtikel && st.trefferProArtikel[name] !== undefined)
+      ? ' · ' + st.trefferProArtikel[name] + ' Treffer' : '';
+    return '<div class="fortschritt-row ' + cls + '"><span class="fs-icon">' + icon + '</span><span>' + name + treffer + '</span></div>';
   }).join('');
 }
 
