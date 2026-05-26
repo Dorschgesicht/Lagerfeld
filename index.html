@@ -357,7 +357,8 @@
         <b style="color:var(--text);">v42</b> Angebotssuche via marktguru.de – direkte URL pro Artikel und Kette<br>
         <b style="color:var(--text);">v43</b> marktguru: direkte web_fetch statt Websuche, Artikel-Slugs automatisch generiert<br>
         <b style="color:var(--text);">v44</b> Angebotssuche: Iteration pro Artikel statt pro Kette, marktguru.de/b/[slug]<br>
-        <b style="color:var(--text);">v45</b> Edeka wieder in Angebotssuche aufgenommen
+        <b style="color:var(--text);">v45</b> Edeka wieder in Angebotssuche aufgenommen<br>
+        <b style="color:var(--text);">v46</b> Angebotssuche: Websuche legitimiert marktguru-URL, dann web_fetch für Inhalt
       </div>
     </div>
   </div>
@@ -1090,11 +1091,11 @@ async function verarbeiteNaechstenArtikel() {
   var heute = new Date().toLocaleDateString('de-DE');
   var kettenListe = KETTEN.join(', ');
 
-  var suchAuftrag = 'WICHTIG: Nutze AUSSCHLIESSLICH web_fetch \u2013 KEINE Websuche!\n\n'
-    + 'Rufe folgende URL direkt ab (web_fetch):\n'
-    + url + '\n\n'
-    + 'Suche auf dieser Seite nach aktuell g\u00fcltigen Angeboten (kein "Leider verpasst").\n'
-    + 'Zeige NUR Angebote bei folgenden H\u00e4ndlern: ' + kettenListe + '\n'
+  var suchAuftrag = 'Suche aktuelle Angebote f\u00fcr "' + artikelName + '" bei Superm\u00e4rkten.\n\n'
+    + 'Schritt 1: Suche nach: marktguru.de ' + artikelName + ' Angebot\n'
+    + 'Schritt 2: Rufe die marktguru-Seite f\u00fcr ' + artikelName + ' direkt ab (web_fetch): ' + url + '\n'
+    + 'Schritt 3: Lies die aktuellen Angebote von der Seite.\n\n'
+    + 'Zeige NUR Angebote die heute noch g\u00fcltig sind (kein "Leider verpasst") UND bei einem dieser H\u00e4ndler: ' + kettenListe + '\n'
     + 'Heutiges Datum: ' + heute + '\n\n'
     + 'Antworte mit einem JSON-Array (in einem Codeblock):\n'
     + '[{"artikel":"' + artikelName + '","haendler":"H\u00e4ndlername","angebot":"Produktbeschreibung","preis":"X,XX \u20ac","gueltig":"Zeitraum"}]\n'
