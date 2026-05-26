@@ -352,7 +352,8 @@
         <b style="color:var(--text);">v37</b> Angebotssuche schonend: eine Kette pro Minute + Fortschrittsanzeige<br>
         <b style="color:var(--text);">v38</b> Nielsen Discount als 7. Quelle für die Angebotssuche<br>
         <b style="color:var(--text);">v39</b> Angebotssuche via kaufDA Fehmarn – regional korrekt für PLZ 23769/23774/23775<br>
-        <b style="color:var(--text);">v40</b> Angebotssuche: Nielsen entfernt, Einzelsuchen pro Kette mit kaufDA-Regionallinks
+        <b style="color:var(--text);">v40</b> Angebotssuche: Nielsen entfernt, Einzelsuchen pro Kette mit kaufDA-Regionallinks<br>
+        <b style="color:var(--text);">v41</b> Edeka aus Angebotssuche entfernt (regionale Franchise-Problematik)
       </div>
     </div>
   </div>
@@ -1063,12 +1064,14 @@ async function verarbeiteNaechsteKette() {
   // Kettenspezifischer Suchauftrag mit regionaler kaufDA-URL
   var suchAuftrag;
   var artikelListe = st.artikelNamen.join(', ');
-  suchAuftrag = 'Suche aktuelle Angebote dieser Woche bei ' + kette + ' für folgende Produkte (oder sehr ähnliche):\n'
+  suchAuftrag = 'Suche auf kaufda.de/Geschaefte/' + kette.replace(' ', '-') + ' alle aktuellen Spirituosen- und Alkohol-Angebote dieser Woche.\n'
+    + 'Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '. Suche nur Angebote die ab heute gültig sind.\n\n'
+    + 'Prüfe dann, welche dieser Angebote zu folgenden Produkten (oder sehr ähnlichen) passen:\n'
     + artikelListe + '\n\n'
-    + 'Durchsuche die aktuellen Prospekte und Angebote von ' + kette + ' und gib alle Treffer zurück, unabhängig von der Region.\n'
+    + 'Gib NUR Treffer zurück, die wirklich zu einem dieser Produkte passen.\n'
     + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
     + '[{"artikel":"mein Produktname","haendler":"' + kette + '","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
-    + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.';
+    + 'Wenn du nichts Passendes findest, antworte mit einem leeren Array [].';
 
   try {
     var apiKey = getApiKey();
