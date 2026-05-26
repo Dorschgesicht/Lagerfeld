@@ -1074,13 +1074,12 @@ async function verarbeiteNaechsteKette() {
       + '[{"artikel":"mein Produktname","haendler":"Nielsen Discount","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Sale"}]\n\n'
       + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.';
   } else {
-    suchAuftrag = 'Durchsuche die kaufDA-Prospektseite für Fehmarn und Umgebung nach aktuellen Supermarkt-Angeboten.\n\n'
-      + 'URL: https://www.kaufda.de/Fehmarn/Supermarkt/p-c11\n\n'
-      + 'Diese Seite zeigt die aktuellen lokalen Prospekte der Supermärkte in Fehmarn (PLZ 23769), Heiligenhafen (23774) und Großenbrode (23775).\n\n'
-      + 'Ich suche gezielt nach Angeboten für folgende Produkte (oder sehr ähnliche):\n'
-      + st.artikelNamen.join(', ') + '\n\n'
-      + 'Gib mir NUR Treffer, die wirklich zu einem dieser Produkte passen und wirklich in einem lokalen Supermarkt auf Fehmarn oder in der direkten Umgebung im Angebot sind. '
-      + 'Gib bei jedem Treffer den Händlernamen (z.B. REWE, Edeka, Netto, Lidl, Aldi, famila) an. '
+    var artikelListe = st.artikelNamen.join(', ');
+    suchAuftrag = 'Suche im Web nach aktuellen Supermarkt-Angeboten für folgende Produkte in der Region Fehmarn (PLZ 23769), Heiligenhafen (23774) und Großenbrode (23775):\n'
+      + artikelListe + '\n\n'
+      + 'Suche spezifisch bei diesen Ketten, die Filialen auf oder direkt neben Fehmarn haben: REWE Fehmarn, EDEKA Fehmarn, Netto Fehmarn, Lidl Fehmarn, Aldi Fehmarn, famila.\n'
+      + 'Nutze Websuchen wie "[Produktname] Angebot REWE Fehmarn diese Woche" oder "[Produktname] Angebot Netto 23769" usw.\n\n'
+      + 'WICHTIG: Zeige NUR Angebote, die nachweislich für Filialen in PLZ 23769, 23774 oder 23775 gelten. Schließe Angebote aus anderen Regionen STRIKT aus.\n\n'
       + 'Antworte am Ende mit einem JSON-Array (in einem Codeblock), Format:\n'
       + '[{"artikel":"mein Produktname","haendler":"Händlername","angebot":"Produktbeschreibung","preis":"X,XX €","gueltig":"Zeitraum"}]\n\n'
       + 'Wenn du nichts findest, antworte mit einem leeren Array []. Das heutige Datum ist ' + new Date().toLocaleDateString('de-DE') + '.';
