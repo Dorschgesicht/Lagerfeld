@@ -358,7 +358,9 @@
         <b style="color:var(--text);">v43</b> marktguru: direkte web_fetch statt Websuche, Artikel-Slugs automatisch generiert<br>
         <b style="color:var(--text);">v44</b> Angebotssuche: Iteration pro Artikel statt pro Kette, marktguru.de/b/[slug]<br>
         <b style="color:var(--text);">v45</b> Edeka wieder in Angebotssuche aufgenommen<br>
-        <b style="color:var(--text);">v46</b> Angebotssuche: Websuche legitimiert marktguru-URL, dann web_fetch für Inhalt
+        <b style="color:var(--text);">v46</b> Angebotssuche: Websuche legitimiert marktguru-URL, dann web_fetch für Inhalt<br>
+        <b style="color:var(--text);">v47</b> Slug-Generierung: Apostrophe werden entfernt (Beck's → becks)<br>
+        <b style="color:var(--text);">v48</b> Angebotssuche: marktguru Suchseite statt Markenseite (vollständigere Ergebnisse)
       </div>
     </div>
   </div>
@@ -1086,15 +1088,17 @@ async function verarbeiteNaechstenArtikel() {
   // marktguru-Slug aus Artikelnamen generieren
   var slug = artikelName.toLowerCase()
     .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
+    .replace(/['\u2018\u2019]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  var url = 'https://www.marktguru.de/b/' + slug;
+  var url = 'https://www.marktguru.de/search/' + slug;
+  var searchUrl = 'https://www.marktguru.de/search/' + encodeURIComponent(artikelName) + '?page=0';
   var heute = new Date().toLocaleDateString('de-DE');
   var kettenListe = KETTEN.join(', ');
 
   var suchAuftrag = 'Suche aktuelle Angebote f\u00fcr "' + artikelName + '" bei Superm\u00e4rkten.\n\n'
     + 'Schritt 1: Suche nach: marktguru.de ' + artikelName + ' Angebot\n'
-    + 'Schritt 2: Rufe die marktguru-Seite f\u00fcr ' + artikelName + ' direkt ab (web_fetch): ' + url + '\n'
-    + 'Schritt 3: Lies die aktuellen Angebote von der Seite.\n\n'
+    + 'Schritt 2: Rufe diese marktguru-Suchseite direkt ab (web_fetch): ' + searchUrl + '\n'
+    + 'Schritt 3: Lies alle aktuellen Angebote von der Seite.\n\n'
     + 'Zeige NUR Angebote die heute noch g\u00fcltig sind (kein "Leider verpasst") UND bei einem dieser H\u00e4ndler: ' + kettenListe + '\n'
     + 'Heutiges Datum: ' + heute + '\n\n'
     + 'Antworte mit einem JSON-Array (in einem Codeblock):\n'
