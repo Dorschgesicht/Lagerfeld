@@ -361,7 +361,9 @@
         <b style="color:var(--text);">v45</b> Edeka wieder in Angebotssuche aufgenommen<br>
         <b style="color:var(--text);">v46</b> Angebotssuche: Websuche legitimiert marktguru-URL, dann web_fetch für Inhalt<br>
         <b style="color:var(--text);">v47</b> Slug-Generierung: Apostrophe werden entfernt (Beck's → becks)<br>
-        <b style="color:var(--text);">v48</b> Angebotssuche: marktguru Suchseite statt Markenseite (vollständigere Ergebnisse)
+        <b style="color:var(--text);">v48</b> Angebotssuche: marktguru Suchseite statt Markenseite (vollständigere Ergebnisse)<br>
+        <b style="color:var(--text);">v49</b> Lager: Mülleimer-Button pro Artikel mit Bestätigungsdialog<br>
+        <b style="color:var(--text);">v50</b> Verlauf: Rückgängig-Button für letzte Aktion
       </div>
     </div>
   </div>
@@ -448,6 +450,11 @@
   </div>
 
   <div id="tab-verlauf" style="display:none;">
+    <div style="margin-bottom:12px;">
+      <button id="undo-btn" onclick="undoLetzteAktion()" style="display:flex;align-items:center;gap:6px;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:8px 14px;font-size:14px;cursor:pointer;opacity:0.5;" disabled>
+        <i class="ti ti-arrow-back-up"></i> Rückgängig
+      </button>
+    </div>
     <div id="log-list"></div>
     <div id="log-empty" class="empty-state" style="display:none;">
       <i class="ti ti-history"></i>Noch keine Aktionen aufgezeichnet.
@@ -1361,6 +1368,22 @@ function deleteMindestOverlay() {
   updateWarnTab();
 }
 
+function askDeleteArtikel(zone, artikelName) {
+  showConfirm('Artikel „' + artikelName + '" aus „' + zone + '" entfernen?', function() {
+    saveUndoSnapshot();
+    if (db.lager[zone]) {
+      db.lager[zone] = db.lager[zone].filter(function(i) { return i.name !== artikelName; });
+      if (db.lager[zone].length === 0) delete db.lager[zone];
+    }
+    if (db.mindest[zone]) delete db.mindest[zone][artikelName];
+    if (db.einheiten) delete db.einheiten[artikelName];
+    deleteFoto(artikelName);
+    saveDb();
+    renderLager();
+    logAction('Artikel gelöscht: ' + artikelName + ' aus ' + zone);
+  });
+}
+
 function askRenameArtikel(lager, artName) {
   pendingRename = { lager: lager, altName: artName };
   document.getElementById('rename-sub').textContent = 'Neuer Name für „' + artName + '" in Lager „' + lager + '"';
@@ -1884,7 +1907,7 @@ function renderLager() {
                 var einheit = getEinheit(item.name);
                 var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
                 var fotoIcon = getFoto(item.name) ? 'ti-photo-filled' : 'ti-photo';
-                rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="openMindestOverlay(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Mindestbestand" style="font-size:14px;color:var(--text3);"><i class="ti ti-bottle"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+                rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="openMindestOverlay(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Mindestbestand" style="font-size:14px;color:var(--text3);"><i class="ti ti-bottle"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button><button class="lager-delete-btn" onclick="askDeleteArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Löschen" style="font-size:14px;color:var(--text3);"><i class="ti ti-trash"></i></button></div></div>';
               });
             }
           });
@@ -1895,7 +1918,7 @@ function renderLager() {
             var einheit = getEinheit(item.name);
             var mengeAnzeige = einheit ? item.menge + ' ' + einheit : item.menge + 'x';
             var fotoIcon = getFoto(item.name) ? 'ti-photo-filled' : 'ti-photo';
-            rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="openMindestOverlay(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Mindestbestand" style="font-size:14px;color:var(--text3);"><i class="ti ti-bottle"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button></div></div>';
+            rows += '<div class="item-row"><span class="item-name">' + item.name + '</span><div style="display:flex;align-items:center;gap:8px;"><span class="item-qty">' + mengeAnzeige + '</span><button class="lager-delete-btn" onclick="openFotoOverlay(\'' + safeArtikel + '\')" aria-label="Foto" style="font-size:14px;color:var(--text3);"><i class="ti ' + fotoIcon + '"></i></button><button class="lager-delete-btn" onclick="openMindestOverlay(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Mindestbestand" style="font-size:14px;color:var(--text3);"><i class="ti ti-bottle"></i></button><button class="lager-delete-btn" onclick="askRenameArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Umbenennen" style="font-size:14px;color:var(--text3);"><i class="ti ti-pencil"></i></button><button class="lager-delete-btn" onclick="askDeleteArtikel(\'' + safeName + '\',\'' + safeArtikel + '\')" aria-label="Löschen" style="font-size:14px;color:var(--text3);"><i class="ti ti-trash"></i></button></div></div>';
           });
         }
       }
@@ -2118,6 +2141,28 @@ function renderLog() {
   }).join('');
 }
 
+var undoSnapshot = null;
+
+function saveUndoSnapshot() {
+  undoSnapshot = JSON.stringify(db);
+  var btn = document.getElementById('undo-btn');
+  if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+}
+
+function undoLetzteAktion() {
+  if (!undoSnapshot) return;
+  showConfirm('Letzte Aktion rückgängig machen?', function() {
+    db = JSON.parse(undoSnapshot);
+    undoSnapshot = null;
+    saveDb();
+    renderLager();
+    renderLog();
+    renderWarnungen();
+    var btn = document.getElementById('undo-btn');
+    if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+  });
+}
+
 function logAction(action) {
   var now = new Date();
   var time = now.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}) + ' ' + now.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
@@ -2228,6 +2273,10 @@ async function sendCommand() {
 
     var aktionen = parsed.aktionen || [];
     var logParts = [];
+
+    if (aktionen.length && aktionen[0].typ !== 'keine') {
+      saveUndoSnapshot();
+    }
 
     aktionen.forEach(function(a) {
       // Fuzzy-Korrektur: Lagernamen gegen vorhandene abgleichen
