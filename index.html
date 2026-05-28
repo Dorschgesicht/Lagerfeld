@@ -369,7 +369,9 @@
         <b style="color:var(--text);">v50</b> Verlauf: Rückgängig-Button für letzte Aktion<br>
         <b style="color:var(--text);">v51</b> Warnungen: idealo.de-Button für Alkohol-Artikel<br>
         <b style="color:var(--text);">v52</b> Lager: idealo.de-Button für Alkohol-Artikel (5. Button)<br>
-        <b style="color:var(--text);">v53</b> Verlauf: alle Aktionen geloggt (Foto, Mindestbestand, Snooze, Entnahme, Auffüllen, Löschen)
+        <b style="color:var(--text);">v53</b> Verlauf: alle Aktionen geloggt (Foto, Mindestbestand, Snooze, Entnahme, Auffüllen, Löschen)<br>
+        <b style="color:var(--text);">v54</b> Lager löschen mit Undo, volle Einheitennamen, Log-leeren-Button<br>
+        <b style="color:var(--text);">v55</b> Scroll-Position bleibt nach Sync/Render erhalten
       </div>
     </div>
   </div>
@@ -456,9 +458,12 @@
   </div>
 
   <div id="tab-verlauf" style="display:none;">
-    <div style="margin-bottom:12px;">
+    <div style="margin-bottom:12px;display:flex;gap:8px;">
       <button id="undo-btn" onclick="undoLetzteAktion()" style="display:flex;align-items:center;gap:6px;background:var(--surface2);border:0.5px solid var(--border);color:var(--text);border-radius:var(--radius-sm);padding:8px 14px;font-size:14px;cursor:pointer;opacity:0.5;" disabled>
         <i class="ti ti-arrow-back-up"></i> Rückgängig
+      </button>
+      <button onclick="clearLog()" style="display:flex;align-items:center;gap:6px;background:var(--surface2);border:0.5px solid var(--border);color:var(--text3);border-radius:var(--radius-sm);padding:8px 14px;font-size:14px;cursor:pointer;">
+        <i class="ti ti-trash"></i> Log leeren
       </button>
     </div>
     <div id="log-list"></div>
@@ -671,9 +676,8 @@ function getEinheit(artikelName) {
 }
 
 function setEinheit(artikelName, einheit) {
-  // Nur ersten Buchstaben speichern, Großbuchstabe
   if (einheit && einheit.length > 0) {
-    db.einheiten[artikelName] = einheit.charAt(0).toUpperCase();
+    db.einheiten[artikelName] = einheit.charAt(0).toUpperCase() + einheit.slice(1).toLowerCase();
   }
 }
 // Sync lagerOrder mit tatsächlichen Lagern
@@ -745,6 +749,7 @@ function closeConfirm() {
 
 function confirmDelete() {
   if (pendingDeleteLager && db.lager[pendingDeleteLager] !== undefined) {
+    saveUndoSnapshot();
     logAction('Lager "' + pendingDeleteLager + '" gelöscht');
     delete db.lager[pendingDeleteLager];
     saveDb();
@@ -1861,6 +1866,15 @@ function renderLager() {
   if (!db.lagerOrder.length) { list.innerHTML = ''; empty.style.display = ''; return; }
   empty.style.display = 'none';
 
+  // Scroll-Positionen merken
+  var mainEl = document.querySelector('main');
+  var mainScroll = mainEl ? mainEl.scrollTop : 0;
+  var cardScrolls = {};
+  list.querySelectorAll('.lager-card').forEach(function(card) {
+    var name = card.getAttribute('data-name');
+    if (name) cardScrolls[name] = card.scrollTop;
+  });
+
   list.innerHTML = db.lagerOrder.map(function(name) {
     var items = db.lager[name];
     var itemKeys = Object.keys(items);
@@ -1951,6 +1965,13 @@ function renderLager() {
       + rows
       + '</div>';
   }).join('');
+
+  // Scroll-Positionen wiederherstellen
+  if (mainEl) mainEl.scrollTop = mainScroll;
+  list.querySelectorAll('.lager-card').forEach(function(card) {
+    var name = card.getAttribute('data-name');
+    if (name && cardScrolls[name]) card.scrollTop = cardScrolls[name];
+  });
 }
 
 function toggleCollapse(name) {
@@ -2176,6 +2197,14 @@ function undoLetzteAktion() {
     renderWarnungen();
     var btn = document.getElementById('undo-btn');
     if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+  });
+}
+
+function clearLog() {
+  showConfirm('Gesamten Verlauf löschen?', function() {
+    db.log = [];
+    saveDb();
+    renderLog();
   });
 }
 
