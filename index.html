@@ -175,6 +175,9 @@
     border: 0.5px solid var(--border); padding: 14px 16px; margin-bottom: 10px;
     max-height: 400px; overflow-y: auto; -webkit-overflow-scrolling: touch;
   }
+  .lager-card::-webkit-scrollbar { width: 8px; }
+  .lager-card::-webkit-scrollbar-track { background: transparent; }
+  .lager-card::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
   .lager-card-title {
     font-size: 15px; font-weight: 600; color: var(--text);
     display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
@@ -365,7 +368,8 @@
         <b style="color:var(--text);">v49</b> Lager: Mülleimer-Button pro Artikel mit Bestätigungsdialog<br>
         <b style="color:var(--text);">v50</b> Verlauf: Rückgängig-Button für letzte Aktion<br>
         <b style="color:var(--text);">v51</b> Warnungen: idealo.de-Button für Alkohol-Artikel<br>
-        <b style="color:var(--text);">v52</b> Lager: idealo.de-Button für Alkohol-Artikel (5. Button)
+        <b style="color:var(--text);">v52</b> Lager: idealo.de-Button für Alkohol-Artikel (5. Button)<br>
+        <b style="color:var(--text);">v53</b> Verlauf: alle Aktionen geloggt (Foto, Mindestbestand, Snooze, Entnahme, Auffüllen, Löschen)
       </div>
     </div>
   </div>
@@ -624,6 +628,7 @@ function getFoto(artikelName) {
 function saveFoto(artikelName, dataUrl) {
   fotoDB[artikelName] = dataUrl;
   saveFotoDB();
+  logAction('📷 Foto gesetzt: ' + artikelName);
 }
 
 function deleteFoto(artikelName) {
@@ -1347,8 +1352,7 @@ function confirmMindestOverlay() {
   if (!zone) zone = lager;
   if (!db.mindest[zone]) db.mindest[zone] = {};
   db.mindest[zone][artikel] = val;
-  db.log.unshift({ zeit: new Date().toISOString(), text: 'Mindestbestand ' + artikel + ' (' + zone + '): ' + val });
-  if (db.log.length > 200) db.log = db.log.slice(0, 200);
+  logAction('Mindestbestand gesetzt: ' + artikel + ' (' + zone + '): ' + val);
   saveDb();
   renderWarnungen();
   updateWarnTab();
@@ -1652,8 +1656,7 @@ function leerEntnehmen(artikelName) {
     mengeAnzeige + ' ' + artikelName + ' wurde verbraucht',
     function() {
       lager[artikelName].menge -= 1;
-      db.log.unshift({ zeit: new Date().toISOString(), text: '−1 ' + artikelName + ' aus ' + entnahmeLager });
-      if (db.log.length > 200) db.log = db.log.slice(0, 200);
+      logAction('−1 ' + artikelName + ' aus ' + entnahmeLager);
       // Verbrauch nur für Rapa Bar erfassen
       if (entnahmeLager === 'Rapa Bar') {
         if (!db.verbrauch) db.verbrauch = [];
@@ -1688,8 +1691,7 @@ function fragenNachfuellen(artikelName) {
         rapa[artikelName] = { menge: 0, gruppe: hinten[artikelName].gruppe || 'Sonstiges' };
       }
       rapa[artikelName].menge += 1;
-      db.log.unshift({ zeit: new Date().toISOString(), text: '↻ ' + mengeAnzeige + ' ' + artikelName + ' von Hinten nach Rapa Bar aufgefüllt' });
-      if (db.log.length > 200) db.log = db.log.slice(0, 200);
+      logAction('↻ ' + mengeAnzeige + ' ' + artikelName + ' von Hinten nach Rapa Bar aufgefüllt');
       saveDb();
       renderLeer();
     },
@@ -1749,6 +1751,7 @@ function snoozeWarnung(zone, art) {
   var key = zone + '::' + art;
   var until = Date.now() + 28 * 24 * 60 * 60 * 1000; // 4 Wochen
   db.snooze[key] = until;
+  logAction('💤 Warnung zurückgestellt: ' + art + ' (' + zone + ')');
   saveDb();
   renderWarnungen();
   updateWarnTab();
@@ -2148,7 +2151,9 @@ function renderLog() {
   if (!db.log.length) { list.innerHTML = ''; empty.style.display = ''; return; }
   empty.style.display = 'none';
   list.innerHTML = db.log.slice().reverse().map(function(e) {
-    return '<div class="log-entry"><span class="log-time">' + e.time + '</span>' + e.action + '</div>';
+    var time = e.time || e.zeit || '';
+    var action = e.action || e.text || '';
+    return '<div class="log-entry"><span class="log-time">' + time + '</span>' + action + '</div>';
   }).join('');
 }
 
