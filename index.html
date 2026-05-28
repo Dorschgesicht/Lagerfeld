@@ -1377,9 +1377,9 @@ function deleteMindestOverlay() {
 function askDeleteArtikel(zone, artikelName) {
   showConfirm('Artikel „' + artikelName + '" aus „' + zone + '" entfernen?', function() {
     saveUndoSnapshot();
-    if (db.lager[zone]) {
-      db.lager[zone] = db.lager[zone].filter(function(i) { return i.name !== artikelName; });
-      if (db.lager[zone].length === 0) delete db.lager[zone];
+    if (db.lager[zone] && db.lager[zone][artikelName]) {
+      delete db.lager[zone][artikelName];
+      if (Object.keys(db.lager[zone]).length === 0) delete db.lager[zone];
     }
     if (db.mindest[zone]) delete db.mindest[zone][artikelName];
     if (db.einheiten) delete db.einheiten[artikelName];
